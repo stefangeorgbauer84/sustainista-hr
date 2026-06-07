@@ -1,0 +1,68 @@
+@media print {
+  /* Sidebar und Navigation ausblenden */
+  aside,
+  nav,
+  button,
+  [data-print-hide] {
+    display: none !important;
+  }
+
+  /* Main-Content voll aufziehen */
+  main {
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  body {
+    background: white !important;
+    font-size: 11pt;
+    color: #111;
+  }
+
+  /* Tabellen sauber umbrechen */
+  table {
+    page-break-inside: avoid;
+    border-collapse: collapse;
+    width: 100%;
+  }
+
+  th, td {
+    border: 1px solid #ddd;
+    padding: 4px 8px;
+    font-size: 9pt;
+  }
+
+  /* Karten ohne Schatten */
+  .rounded-xl,
+  .rounded-2xl {
+    border: 1px solid #e5e7eb !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+
+  /* Farbige Badges in SW */
+  [class*="bg-green"],
+  [class*="bg-amber"],
+  [class*="bg-red"],
+  [class*="bg-blue"] {
+    background: #f3f4f6 !important;
+    color: #111 !important;
+  }
+
+  /* Seitenheader */
+  @page {
+    margin: 1.5cm 2cm;
+    size: A4 landscape;
+  }
+
+  /* Drucktitel */
+  [data-print-title]::before {
+    content: attr(data-print-title);
+    display: block;
+    font-size: 14pt;
+    font-weight: bold;
+    margin-bottom: 12pt;
+    border-bottom: 2pt solid #4F772D;
+    padding-bottom: 6pt;
+  }
+}

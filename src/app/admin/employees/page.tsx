@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { databases, DB_ID, COLLECTIONS } from "@/lib/appwrite";
 import { Query, ID } from "appwrite";
 import type { Employee } from "@/types";
@@ -209,6 +210,12 @@ export default function EmployeesPage() {
                       {emp.role === "admin" ? "Admin" : "Mitarbeiter"}
                     </span>
                   </div>
+                  <Link
+                    href={`/admin/employees/${emp.$id}`}
+                    className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-50 transition"
+                  >
+                    Details →
+                  </Link>
                   <button
                     onClick={() => openEdit(emp)}
                     className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-50 transition"

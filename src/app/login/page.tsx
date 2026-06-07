@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -88,6 +89,11 @@ export default function LoginPage() {
               {loading ? "Wird angemeldet…" : "Anmelden"}
             </button>
           </form>
+          <div className="mt-4 text-center">
+            <Link href="/forgot-password" className="text-xs text-gray-400 hover:text-[#4F772D] transition">
+              Passwort vergessen?
+            </Link>
+          </div>
         </div>
 
         <p className="mt-6 text-center text-xs text-gray-400">

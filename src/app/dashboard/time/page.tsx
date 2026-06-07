@@ -15,7 +15,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
-import { Play, Square, Clock, AlertTriangle, Plus, X, Coffee } from "lucide-react";
+import { Play, Square, Clock, AlertTriangle, Plus, X, Coffee, Printer } from "lucide-react";
 
 const manualSchema = z.object({
   date: z.string().min(1, "Datum erforderlich"),
@@ -132,13 +132,23 @@ export default function TimePage() {
           <h1 className="text-xl font-semibold text-gray-900">Zeiterfassung</h1>
           <p className="mt-0.5 text-sm text-gray-500">Starte, stoppe oder trage Zeiten manuell ein</p>
         </div>
-        <button
-          onClick={() => setShowManual(!showManual)}
-          className="flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 transition"
-        >
-          {showManual ? <X className="h-4 w-4" strokeWidth={1.5} /> : <Plus className="h-4 w-4" strokeWidth={1.5} />}
-          Manuell eintragen
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 transition"
+            data-print-hide
+          >
+            <Printer className="h-4 w-4" strokeWidth={1.5} />
+            Drucken
+          </button>
+          <button
+            onClick={() => setShowManual(!showManual)}
+            className="flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 transition"
+          >
+            {showManual ? <X className="h-4 w-4" strokeWidth={1.5} /> : <Plus className="h-4 w-4" strokeWidth={1.5} />}
+            Manuell eintragen
+          </button>
+        </div>
       </div>
 
       {/* Timer Card */}
