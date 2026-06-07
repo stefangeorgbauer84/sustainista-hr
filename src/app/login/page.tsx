@@ -89,9 +89,12 @@ export default function LoginPage() {
               {loading ? "Wird angemeldet…" : "Anmelden"}
             </button>
           </form>
-          <div className="mt-4 text-center">
+          <div className="mt-4 flex items-center justify-between">
             <Link href="/forgot-password" className="text-xs text-gray-400 hover:text-[#4F772D] transition">
               Passwort vergessen?
+            </Link>
+            <Link href="/register" className="text-xs font-medium text-[#4F772D] hover:underline">
+              Jetzt registrieren →
             </Link>
           </div>
         </div>

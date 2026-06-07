@@ -7,12 +7,17 @@ import Sidebar from "@/components/layout/Sidebar";
 import MobileSidebar from "@/components/layout/MobileSidebar";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, employee, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && !user) router.replace("/login");
-  }, [user, loading, router]);
+    if (loading) return;
+    if (!user) { router.replace("/login"); return; }
+    if (employee && employee.status === "pending") {
+      router.replace(employee.onboardingStep === "personal" ? "/onboarding" : "/pending");
+    }
+    if (employee && employee.status === "rejected") { router.replace("/pending"); }
+  }, [user, employee, loading, router]);
 
   if (loading) return (
     <div className="flex h-screen items-center justify-center">

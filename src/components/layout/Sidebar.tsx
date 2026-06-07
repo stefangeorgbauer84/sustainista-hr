@@ -4,16 +4,20 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { logout } from "@/lib/auth";
+import { databases, DB_ID, COLLECTIONS } from "@/lib/appwrite";
+import { Query } from "appwrite";
 import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 import {
   Clock, Calendar, FileText, Home, Users,
-  BarChart2, LogOut, Leaf, User, TrendingUp,
+  BarChart2, LogOut, Leaf, User, TrendingUp, UserCheck,
 } from "lucide-react";
 
 interface NavItem {
   href: string;
   label: string;
   icon: React.ReactNode;
+  badge?: number;
 }
 
 const employeeNav: NavItem[] = [
@@ -26,20 +30,40 @@ const employeeNav: NavItem[] = [
   { href: "/dashboard/profile", label: "Mein Profil", icon: <User strokeWidth={1.5} className="h-4 w-4" /> },
 ];
 
-const adminNav: NavItem[] = [
-  { href: "/admin", label: "Übersicht", icon: <Home strokeWidth={1.5} className="h-4 w-4" /> },
-  { href: "/admin/employees", label: "Mitarbeiter", icon: <Users strokeWidth={1.5} className="h-4 w-4" /> },
-  { href: "/admin/time", label: "Zeiterfassung", icon: <Clock strokeWidth={1.5} className="h-4 w-4" /> },
-  { href: "/admin/leave", label: "Urlaubsanträge", icon: <Calendar strokeWidth={1.5} className="h-4 w-4" /> },
-  { href: "/admin/reports", label: "Reports", icon: <BarChart2 strokeWidth={1.5} className="h-4 w-4" /> },
-  { href: "/admin/documents", label: "Dokumente", icon: <FileText strokeWidth={1.5} className="h-4 w-4" /> },
-];
+function buildAdminNav(pendingCount: number): NavItem[] {
+  return [
+    { href: "/admin", label: "Übersicht", icon: <Home strokeWidth={1.5} className="h-4 w-4" /> },
+    { href: "/admin/employees", label: "Mitarbeiter", icon: <Users strokeWidth={1.5} className="h-4 w-4" /> },
+    {
+      href: "/admin/onboarding", label: "Onboarding",
+      icon: <UserCheck strokeWidth={1.5} className="h-4 w-4" />,
+      badge: pendingCount > 0 ? pendingCount : undefined,
+    },
+    { href: "/admin/time", label: "Zeiterfassung", icon: <Clock strokeWidth={1.5} className="h-4 w-4" /> },
+    { href: "/admin/leave", label: "Urlaubsanträge", icon: <Calendar strokeWidth={1.5} className="h-4 w-4" /> },
+    { href: "/admin/reports", label: "Reports", icon: <BarChart2 strokeWidth={1.5} className="h-4 w-4" /> },
+    { href: "/admin/documents", label: "Dokumente", icon: <FileText strokeWidth={1.5} className="h-4 w-4" /> },
+  ];
+}
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, employee, isAdminUser } = useAuth();
-  const nav = isAdminUser ? adminNav : employeeNav;
+
+  const { data: pendingCount = 0 } = useQuery({
+    queryKey: ["pending-count"],
+    queryFn: async () => {
+      const res = await databases.listDocuments(DB_ID, COLLECTIONS.EMPLOYEES, [
+        Query.equal("status", "pending"), Query.limit(1),
+      ]);
+      return res.total;
+    },
+    enabled: isAdminUser,
+    refetchInterval: 60_000,
+  });
+
+  const nav = isAdminUser ? buildAdminNav(pendingCount) : employeeNav;
 
   async function handleLogout() {
     try {
@@ -76,7 +100,12 @@ export default function Sidebar() {
               }`}
             >
               {item.icon}
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {item.badge !== undefined && (
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-bold text-white">
+                  {item.badge}
+                </span>
+              )}
             </Link>
           );
         })}

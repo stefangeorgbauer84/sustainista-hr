@@ -1,4 +1,5 @@
 export type UserRole = "admin" | "employee";
+export type EmployeeStatus = "pending" | "active" | "rejected";
 
 export interface AppwriteUser {
   $id: string;
@@ -15,14 +16,20 @@ export interface Employee {
   lastName: string;
   email: string;
   role: UserRole;
+  status: EmployeeStatus;
   department: string;
   position: string;
   startDate: string;
-  vacationDaysTotal: number; // defaults to 25 (§ 2 UrlG)
+  vacationDaysTotal: number;
   vacationDaysUsed: number;
   bankAccount?: string;
   phone?: string;
   address?: string;
+  onboardingStep?: string;
+  rejectionReason?: string;
+  verifiedBy?: string;
+  verifiedAt?: string;
+  googleRefreshToken?: string;
   $createdAt: string;
   $updatedAt: string;
 }
