@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Clock, Calendar, FileText, Home, Users,
   BarChart2, LogOut, Leaf, User, TrendingUp, UserCheck,
+  Trophy, HeartPulse, Target, Lightbulb, ClipboardList, Globe,
 } from "lucide-react";
 
 interface NavItem {
@@ -27,11 +28,18 @@ const employeeNav: NavItem[] = [
   { href: "/dashboard/calendar", label: "Teamkalender", icon: <Users strokeWidth={1.5} className="h-4 w-4" /> },
   { href: "/dashboard/documents", label: "Meine Dokumente", icon: <FileText strokeWidth={1.5} className="h-4 w-4" /> },
   { href: "/dashboard/zeitkonto", label: "Zeitkonto", icon: <TrendingUp strokeWidth={1.5} className="h-4 w-4" /> },
+  { href: "/dashboard/wins", label: "Meine Wins", icon: <Trophy strokeWidth={1.5} className="h-4 w-4" /> },
+  { href: "/dashboard/checkin", label: "Check-in", icon: <HeartPulse strokeWidth={1.5} className="h-4 w-4" /> },
+  { href: "/dashboard/okrs", label: "Meine OKRs", icon: <Target strokeWidth={1.5} className="h-4 w-4" /> },
+  { href: "/dashboard/kaizen", label: "Kaizen-Board", icon: <Lightbulb strokeWidth={1.5} className="h-4 w-4" /> },
+  { href: "/dashboard/review", label: "Performance Review", icon: <ClipboardList strokeWidth={1.5} className="h-4 w-4" /> },
+  { href: "/dashboard/culture", label: "Kultur & Werte", icon: <Globe strokeWidth={1.5} className="h-4 w-4" /> },
   { href: "/dashboard/profile", label: "Mein Profil", icon: <User strokeWidth={1.5} className="h-4 w-4" /> },
 ];
 
 function buildAdminNav(pendingCount: number): NavItem[] {
   return [
+    { href: "/admin/leadership", label: "Leadership", icon: <TrendingUp strokeWidth={1.5} className="h-4 w-4" /> },
     { href: "/admin", label: "Übersicht", icon: <Home strokeWidth={1.5} className="h-4 w-4" /> },
     { href: "/admin/employees", label: "Mitarbeiter", icon: <Users strokeWidth={1.5} className="h-4 w-4" /> },
     {
@@ -41,6 +49,9 @@ function buildAdminNav(pendingCount: number): NavItem[] {
     },
     { href: "/admin/time", label: "Zeiterfassung", icon: <Clock strokeWidth={1.5} className="h-4 w-4" /> },
     { href: "/admin/leave", label: "Urlaubsanträge", icon: <Calendar strokeWidth={1.5} className="h-4 w-4" /> },
+    { href: "/admin/pulse", label: "Team-Puls", icon: <HeartPulse strokeWidth={1.5} className="h-4 w-4" /> },
+    { href: "/admin/performance", label: "Performance", icon: <ClipboardList strokeWidth={1.5} className="h-4 w-4" /> },
+    { href: "/admin/kaizen", label: "Kaizen-Board", icon: <Lightbulb strokeWidth={1.5} className="h-4 w-4" /> },
     { href: "/admin/reports", label: "Reports", icon: <BarChart2 strokeWidth={1.5} className="h-4 w-4" /> },
     { href: "/admin/documents", label: "Dokumente", icon: <FileText strokeWidth={1.5} className="h-4 w-4" /> },
   ];

@@ -83,3 +83,68 @@ export interface WorkStats {
   sickDaysThisYear: number;
   currentlyRunning: boolean;
 }
+
+export interface Win {
+  $id: string;
+  employeeId: string;
+  weekLabel: string;
+  content: string;
+  impact?: string;
+  tags?: string;
+  $createdAt: string;
+  $updatedAt: string;
+}
+
+export interface CheckIn {
+  $id: string;
+  employeeId: string;
+  weekLabel: string;
+  energyLevel: number;
+  priority: string;
+  blocker?: string;
+  satisfaction?: number;
+  $createdAt: string;
+  $updatedAt: string;
+}
+
+export interface OKR {
+  $id: string;
+  employeeId: string;
+  quarter: string;
+  objective: string;
+  keyResults: string;
+  progress: number;
+  status?: "on-track" | "at-risk" | "done";
+  $createdAt: string;
+  $updatedAt: string;
+}
+
+export interface KaizenItem {
+  $id: string;
+  employeeId: string;
+  employeeName: string;
+  title: string;
+  description: string;
+  category?: string;
+  status?: "open" | "in-progress" | "done" | "declined";
+  adminComment?: string;
+  upvotes?: number;
+  $createdAt: string;
+  $updatedAt: string;
+}
+
+export interface PerformanceReview {
+  $id: string;
+  employeeId: string;
+  period: string;
+  selfAssessment?: string;
+  managerAssessment?: string;
+  selfScore?: number;
+  managerScore?: number;
+  strengths?: string;
+  growthAreas?: string;
+  status?: "self-pending" | "manager-pending" | "complete";
+  reviewedBy?: string;
+  $createdAt: string;
+  $updatedAt: string;
+}
