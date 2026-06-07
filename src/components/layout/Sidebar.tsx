@@ -7,7 +7,7 @@ import { logout } from "@/lib/auth";
 import { toast } from "sonner";
 import {
   Clock, Calendar, FileText, Home, Users,
-  BarChart2, LogOut, Leaf, Settings,
+  BarChart2, LogOut, Leaf, User,
 } from "lucide-react";
 
 interface NavItem {
@@ -20,7 +20,9 @@ const employeeNav: NavItem[] = [
   { href: "/dashboard", label: "Übersicht", icon: <Home strokeWidth={1.5} className="h-4 w-4" /> },
   { href: "/dashboard/time", label: "Zeiterfassung", icon: <Clock strokeWidth={1.5} className="h-4 w-4" /> },
   { href: "/dashboard/leave", label: "Urlaub & Abwesenheit", icon: <Calendar strokeWidth={1.5} className="h-4 w-4" /> },
+  { href: "/dashboard/calendar", label: "Teamkalender", icon: <Users strokeWidth={1.5} className="h-4 w-4" /> },
   { href: "/dashboard/documents", label: "Meine Dokumente", icon: <FileText strokeWidth={1.5} className="h-4 w-4" /> },
+  { href: "/dashboard/profile", label: "Mein Profil", icon: <User strokeWidth={1.5} className="h-4 w-4" /> },
 ];
 
 const adminNav: NavItem[] = [
