@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { account, databases, DB_ID, COLLECTIONS } from "@/lib/appwrite";
+import { databases, DB_ID, COLLECTIONS } from "@/lib/appwrite";
 import { isAdmin } from "@/lib/auth";
 import type { AppwriteUser, Employee } from "@/types";
 import { Query } from "appwrite";
@@ -29,13 +29,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function load() {
     try {
-      const u = await account.get() as unknown as AppwriteUser;
-      setUser(u);
-      const res = await databases.listDocuments(DB_ID, COLLECTIONS.EMPLOYEES, [
-        Query.equal("userId", u.$id),
-        Query.limit(1),
-      ]);
-      setEmployee((res.documents[0] as unknown as Employee) ?? null);
+      // Use server-side session cookie via /api/auth/me
+      const res = await fetch("/api/auth/me");
+      if (!res.ok) {
+        setUser(null);
+        setEmployee(null);
+        return;
+      }
+      const data = await res.json() as AppwriteUser & { _sessionToken?: string; _projectId?: string };
+      const { _sessionToken, _projectId, ...u } = data;
+      // Restore Appwrite browser SDK session so database calls work after page reload
+      if (typeof window !== "undefined" && _sessionToken && _projectId) {
+        window.localStorage.setItem(
+          "cookieFallback",
+          JSON.stringify({ [`a_session_${_projectId}`]: _sessionToken })
+        );
+      }
+      setUser(u as AppwriteUser);
+
+      // Fetch employee record using Appwrite SDK (still works client-side with proper permissions)
+      try {
+        const empRes = await databases.listDocuments(DB_ID, COLLECTIONS.EMPLOYEES, [
+          Query.equal("userId", u.$id),
+          Query.limit(1),
+        ]);
+        setEmployee((empRes.documents[0] as unknown as Employee) ?? null);
+      } catch {
+        setEmployee(null);
+      }
     } catch {
       setUser(null);
       setEmployee(null);

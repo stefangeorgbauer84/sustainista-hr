@@ -1,12 +1,32 @@
 import { account } from "./appwrite";
 import { AppwriteException, ID, OAuthProvider } from "appwrite";
 
-export async function login(email: string, password: string) {
-  return account.createEmailPasswordSession(email, password);
+export async function login(email: string, password: string): Promise<{ isAdmin: boolean }> {
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error ?? "Login fehlgeschlagen");
+  }
+  const data = await res.json();
+  // Store session in localStorage so Appwrite browser SDK can use it for database calls
+  if (typeof window !== "undefined" && data.sessionToken && data.projectId) {
+    window.localStorage.setItem(
+      "cookieFallback",
+      JSON.stringify({ [`a_session_${data.projectId}`]: data.sessionToken })
+    );
+  }
+  return { isAdmin: data.isAdmin };
 }
 
 export async function logout() {
-  return account.deleteSession("current");
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem("cookieFallback");
+  }
+  await fetch("/api/auth/logout", { method: "POST" });
 }
 
 export async function getUser() {
