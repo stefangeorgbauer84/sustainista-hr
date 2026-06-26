@@ -14,8 +14,8 @@ export async function POST(req: NextRequest) {
   const { data: { user }, error } = await supabase.auth.getUser()
   if (error || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  const { employeeId, refreshToken } = await req.json() as { employeeId: string; refreshToken: string }
-  if (!employeeId || !refreshToken) return NextResponse.json({ error: "Missing params" }, { status: 400 })
+  const { employeeId } = await req.json() as { employeeId: string }
+  if (!employeeId) return NextResponse.json({ error: "Missing params" }, { status: 400 })
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -26,6 +26,16 @@ export async function POST(req: NextRequest) {
   if (!profile || profile.employee_id !== employeeId) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
+
+  // Look up refresh token server-side — never accept from client
+  const { data: emp } = await supabase
+    .from("employees")
+    .select("custom_fields")
+    .eq("id", employeeId)
+    .single()
+
+  const refreshToken = (emp?.custom_fields as Record<string, string> | null)?.googleRefreshToken
+  if (!refreshToken) return NextResponse.json({ error: "Calendar not connected" }, { status: 400 })
 
   const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,

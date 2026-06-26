@@ -81,10 +81,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function refresh() {
+    const { data: { user: u } } = await supabase.auth.getUser()
     const { data: { session: s } } = await supabase.auth.getSession()
     setSession(s)
-    setUser(s?.user ?? null)
-    if (s?.user) await loadProfile(s.user.id)
+    setUser(u ?? null)
+    if (u) await loadProfile(u.id)
     else { setProfile(null); setEmployee(null); setViewAsEmployee(null); setCompany(null) }
   }
 
@@ -114,6 +115,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const effectiveEmployee = viewAsEmployee ?? employee
   const isImpersonating = viewAsEmployee !== null
 
+  function viewAs(emp: Employee | null) {
+    setViewAsEmployee(emp)
+    fetch('/api/audit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: emp ? 'impersonate_start' : 'impersonate_end',
+        target_id: emp?.id ?? null,
+        metadata: emp ? { name: `${emp.first_name} ${emp.last_name}` } : null,
+      }),
+    }).catch(() => {})
+  }
+
   return (
     <AuthContext.Provider value={{
       user, session, profile,
@@ -121,7 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       realEmployee: employee,
       company, isAdminUser, isSuperAdmin,
       isImpersonating, loading, refresh,
-      viewAs: setViewAsEmployee,
+      viewAs,
     }}>
       {children}
     </AuthContext.Provider>

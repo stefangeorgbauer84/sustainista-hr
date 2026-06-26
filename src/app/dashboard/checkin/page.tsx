@@ -6,7 +6,38 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { PERF_COLLECTIONS, currentWeekLabel } from "@/app/lib/collections";
 import { toast } from "sonner";
-import { HeartPulse, CheckCircle, TrendingUp } from "lucide-react";
+import { HeartPulse, CheckCircle, TrendingUp, Flame } from "lucide-react";
+import { format } from "date-fns";
+import { de } from "date-fns/locale";
+
+function getISOWeekMonday(year: number, week: number): Date {
+  const jan4 = new Date(year, 0, 4);
+  const dayOfWeek = jan4.getDay() || 7;
+  const weekStart = new Date(jan4);
+  weekStart.setDate(jan4.getDate() - dayOfWeek + 1);
+  weekStart.setDate(weekStart.getDate() + (week - 1) * 7);
+  return weekStart;
+}
+function formatWeekLabel(label: string): string {
+  const [yearStr, weekStr] = label.split("-W");
+  const year = Number(yearStr);
+  const week = Number(weekStr);
+  const monday = getISOWeekMonday(year, week);
+  return `KW ${week} · ${format(monday, "MMM yyyy", { locale: de })}`;
+}
+function calcStreak(history: CheckIn[]): number {
+  if (!history.length) return 0;
+  const labels = [...new Set(history.map(c => c.week_label))].sort().reverse();
+  let streak = 1;
+  for (let i = 1; i < labels.length; i++) {
+    const [y1, w1] = labels[i-1].split("-W").map(Number);
+    const [y2, w2] = labels[i].split("-W").map(Number);
+    const isNext = (y1 === y2 && w1 === w2 + 1) || (y1 === y2 + 1 && w2 >= 51 && w1 === 1);
+    if (isNext) streak++;
+    else break;
+  }
+  return streak;
+}
 
 interface CheckIn {
   id: string;
@@ -51,6 +82,7 @@ export default function CheckInPage() {
   });
 
   const thisWeek = history.find(c => c.week_label === weekLabel);
+  const streak = calcStreak(history);
 
   useEffect(() => {
     if (thisWeek) {
@@ -110,12 +142,20 @@ export default function CheckInPage() {
       <div className="rounded-2xl border border-gray-200 bg-white p-6">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-900">Woche {weekLabel}</h2>
-          {done && thisWeek && (
-            <div className="flex items-center gap-1.5 text-xs text-green-600 font-medium">
-              <CheckCircle className="h-4 w-4" strokeWidth={1.5} />
-              Ausgefüllt
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {done && thisWeek && (
+              <div className="flex items-center gap-1.5 text-xs text-green-600 font-medium">
+                <CheckCircle className="h-4 w-4" strokeWidth={1.5} />
+                Ausgefüllt
+              </div>
+            )}
+            {streak >= 2 && (
+              <div className="flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs font-medium text-amber-700">
+                <Flame className="h-3 w-3" strokeWidth={1.5} />
+                {streak} Wochen in Folge
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="space-y-6">
@@ -211,8 +251,8 @@ export default function CheckInPage() {
           <div className="divide-y divide-gray-50">
             {history.filter(c => c.week_label !== weekLabel).slice(0, 8).map(ci => (
               <div key={ci.id} className="flex items-center gap-4 px-5 py-3">
-                <div className="w-20 flex-shrink-0">
-                  <span className="text-xs font-mono text-gray-400">{ci.week_label}</span>
+                <div className="w-28 flex-shrink-0">
+                  <span className="text-xs text-gray-400">{formatWeekLabel(ci.week_label)}</span>
                 </div>
                 <div className={`flex h-7 w-7 items-center justify-center rounded-full text-sm ${ENERGY_COLORS[ci.energy_level]}`}>
                   {ENERGY_EMOJIS[ci.energy_level]}

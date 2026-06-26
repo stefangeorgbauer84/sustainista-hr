@@ -8,7 +8,8 @@ import { calcWorkedMinutes, formatDuration } from "@/lib/time";
 import { isHoliday } from "@/lib/holidays";
 import { format, getDaysInMonth, isWeekend } from "date-fns";
 import { de } from "date-fns/locale";
-import { TrendingUp, TrendingDown, Clock, Minus } from "lucide-react";
+import { TrendingUp, TrendingDown, Clock, Minus, Copy } from "lucide-react";
+import Link from "next/link";
 
 interface MonthSummary {
   year: number;
@@ -72,6 +73,18 @@ export default function ZeitkontoPage() {
 
   const totalDiff = summaries.reduce((s, m) => s + m.diff, 0);
 
+  function handleCopy() {
+    const lines = [
+      `Zeitkonto-Saldo (${format(new Date(months[0].year, months[0].month - 1), "MMM yyyy", { locale: de })} – ${format(new Date(months[months.length-1].year, months[months.length-1].month - 1), "MMM yyyy", { locale: de })})`,
+      ...summaries.map(m => `${m.label}: ${m.diff >= 0 ? "+" : ""}${formatDuration(Math.abs(m.diff))}`),
+      `Gesamt: ${totalDiff >= 0 ? "+" : ""}${formatDuration(Math.abs(totalDiff))}`,
+    ];
+    navigator.clipboard.writeText(lines.join("\n")).then(
+      () => toast.success("Saldo kopiert"),
+      () => toast.error("Kopieren fehlgeschlagen"),
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -99,7 +112,10 @@ export default function ZeitkontoPage() {
         {totalDiff > 2 * 8 * 60 && (
           <div className="mt-4 rounded-lg border border-[#4F772D]/20 bg-white/60 px-4 py-3">
             <p className="text-xs text-[#4F772D] font-medium">
-              Tipp: {formatDuration(totalDiff)} Überstunden = {Math.floor(totalDiff / (8 * 60))} Tage Zeitausgleich.
+              Tipp: {formatDuration(totalDiff)} Überstunden ={" "}
+              <Link href="/dashboard/leave" className="underline underline-offset-2 hover:text-[#31572C]">
+                {Math.floor(totalDiff / (8 * 60))} Tage Zeitausgleich
+              </Link> beantragen.
             </p>
           </div>
         )}
@@ -109,6 +125,10 @@ export default function ZeitkontoPage() {
         <div className="border-b border-gray-100 px-5 py-4 flex items-center gap-2">
           <Clock className="h-4 w-4 text-gray-400" strokeWidth={1.5} />
           <h2 className="text-sm font-medium text-gray-900">Monatsübersicht</h2>
+          <button onClick={handleCopy} className="ml-auto flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-500 hover:bg-gray-50 transition">
+            <Copy className="h-3.5 w-3.5" strokeWidth={1.5} />
+            Kopieren
+          </button>
         </div>
         <div className="divide-y divide-gray-50">
           {isLoading ? (

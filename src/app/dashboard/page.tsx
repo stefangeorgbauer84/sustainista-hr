@@ -5,12 +5,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { getRunningEntry, getTimeRecordsForEmployee, calcWorkedMinutes, formatDuration } from "@/lib/time";
 import { getAbsencesForEmployee, getLeaveBalance } from "@/lib/leave";
-import { Clock, Calendar, FileText, TrendingUp, AlertCircle, Activity } from "lucide-react";
-import { format, parseISO } from "date-fns";
+import { supabase } from "@/lib/supabase";
+import type { TimeRecord } from "@/types";
+import { Clock, Calendar, FileText, TrendingUp, AlertCircle, Activity, MapPin } from "lucide-react";
+import { format, parseISO, differenceInDays } from "date-fns";
 import { de } from "date-fns/locale";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useState } from "react";
 
 const statusColors: Record<string, string> = {
   requested: "bg-amber-100 text-amber-700",
@@ -27,9 +29,25 @@ function GCalNotice() {
   return null;
 }
 
+function getElapsedLabel(startTime: string): string {
+  const [h, m] = startTime.split(":").map(Number);
+  const now = new Date();
+  const elapsed = Math.max(0, now.getHours() * 60 + now.getMinutes() - (h * 60 + m));
+  const hh = Math.floor(elapsed / 60);
+  const mm = elapsed % 60;
+  return hh > 0 ? `${hh}h ${mm}m` : `${mm}m`;
+}
+
 export default function DashboardPage() {
   const { employee } = useAuth();
   const now = new Date();
+  const todayStr = format(now, "yyyy-MM-dd");
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   const { data: running } = useQuery({
     queryKey: ["running", employee?.id],
@@ -56,6 +74,55 @@ export default function DashboardPage() {
     enabled: !!employee,
   });
 
+  const { data: nextShift } = useQuery({
+    queryKey: ["next-shift", employee?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("shift_schedules")
+        .select("scheduled_date, start_time, end_time, break_minutes, locations(name)")
+        .eq("employee_id", employee!.id)
+        .gte("scheduled_date", todayStr)
+        .eq("status", "published")
+        .order("scheduled_date", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      return data ?? null;
+    },
+    enabled: !!employee,
+  });
+
+  const { data: nextAbsence } = useQuery({
+    queryKey: ["next-absence", employee?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("absences")
+        .select("start_date, end_date, working_days")
+        .eq("employee_id", employee!.id)
+        .eq("status", "approved")
+        .gte("start_date", todayStr)
+        .order("start_date", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      return data ?? null;
+    },
+    enabled: !!employee,
+  });
+
+  const { data: recentRecords = [] } = useQuery<TimeRecord[]>({
+    queryKey: ["time-records-recent", employee?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("time_records")
+        .select("*")
+        .eq("employee_id", employee!.id)
+        .not("end_time", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      return (data ?? []) as TimeRecord[];
+    },
+    enabled: !!employee,
+  });
+
   const totalMinutesThisMonth = records
     .filter(e => e.end_time !== null)
     .reduce((sum, e) => sum + calcWorkedMinutes(e), 0);
@@ -64,7 +131,7 @@ export default function DashboardPage() {
     ? leaveBalance.entitlement_days + (leaveBalance.carry_over_days ?? 0)
     : 25;
   const vacationLeft = leaveBalance
-    ? totalDays - (leaveBalance.taken_days ?? 0)
+    ? totalDays - (leaveBalance.taken_days ?? 0) - (leaveBalance.approved_pending_days ?? 0)
     : 25;
   const pendingAbsences = absences.filter(a => a.status === "requested").length;
   const monthlyTargetMinutes = Math.round((employee?.hours_per_week ?? 40) * 52 / 12) * 60;
@@ -77,9 +144,13 @@ export default function DashboardPage() {
     return "Guten Abend";
   };
 
-  const recentActivity = [...absences]
-    .sort((a, b) => b.created_at.localeCompare(a.created_at))
-    .slice(0, 5);
+  const recentActivity = [
+    ...absences.map(a => ({ kind: "absence" as const, date: a.created_at, id: a.id, data: a })),
+    ...recentRecords.map(r => ({ kind: "time" as const, date: r.created_at, id: r.id, data: r })),
+  ].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 6);
+
+  const shiftLocations = nextShift as { locations?: { name: string } | null } | null;
+  const isToday = nextShift?.scheduled_date === todayStr;
 
   return (
     <div className="space-y-6">
@@ -94,15 +165,58 @@ export default function DashboardPage() {
         </p>
       </div>
 
+      {/* Live-Timer */}
       {running && (
         <div className="flex items-center gap-3 rounded-xl border border-[#4F772D]/30 bg-[#4F772D]/5 px-4 py-3">
           <div className="h-2 w-2 animate-pulse rounded-full bg-[#4F772D]" />
-          <p className="text-sm text-[#4F772D] font-medium">
-            Zeiterfassung läuft seit {running.start_time} Uhr
-          </p>
+          <div>
+            <p className="text-sm text-[#4F772D] font-medium">
+              Zeiterfassung läuft · {getElapsedLabel(running.start_time)}
+            </p>
+            <p className="text-[11px] text-[#4F772D]/60">Gestartet um {running.start_time.slice(0, 5)} Uhr</p>
+          </div>
           <Link href="/dashboard/time" className="ml-auto text-xs text-[#4F772D] underline underline-offset-2">
             Stoppen →
           </Link>
+        </div>
+      )}
+
+      {/* Nächste / heutige Schicht */}
+      {nextShift && (
+        <div className="flex items-center gap-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+          <Calendar className="h-4 w-4 shrink-0 text-blue-500" strokeWidth={1.5} />
+          <div>
+            <p className="text-sm font-medium text-blue-800">
+              {isToday ? "Heutiger Dienst:" : `Nächste Schicht — ${format(parseISO(nextShift.scheduled_date), "EEE, d. MMM", { locale: de })}:`}{" "}
+              <strong>{nextShift.start_time.slice(0, 5)} – {nextShift.end_time.slice(0, 5)}</strong>
+            </p>
+            {shiftLocations?.locations?.name && (
+              <p className="mt-0.5 flex items-center gap-1 text-xs text-blue-600">
+                <MapPin className="h-3 w-3" strokeWidth={1.5} />
+                {shiftLocations.locations.name.split(" · ")[0]}
+              </p>
+            )}
+          </div>
+          <Link href="/dashboard/schedule" className="ml-auto text-xs text-blue-600 underline underline-offset-2">
+            Dienstplan →
+          </Link>
+        </div>
+      )}
+
+      {nextAbsence && (
+        <div className="flex items-center gap-3 rounded-xl border border-purple-100 bg-purple-50 px-4 py-3">
+          <Calendar className="h-4 w-4 shrink-0 text-purple-400" strokeWidth={1.5} />
+          <div>
+            <p className="text-sm font-medium text-purple-800">
+              Nächster Urlaub — {format(parseISO(nextAbsence.start_date), "d. MMM", { locale: de })}
+              {nextAbsence.start_date !== nextAbsence.end_date && ` bis ${format(parseISO(nextAbsence.end_date), "d. MMM yyyy", { locale: de })}`}
+              {nextAbsence.working_days && ` · ${nextAbsence.working_days} Tage`}
+            </p>
+            <p className="mt-0.5 text-xs text-purple-500">
+              in {differenceInDays(parseISO(nextAbsence.start_date), now)} Tagen
+            </p>
+          </div>
+          <a href="/dashboard/leave" className="ml-auto text-xs text-purple-500 underline underline-offset-2">Details →</a>
         </div>
       )}
 
@@ -138,29 +252,49 @@ export default function DashboardPage() {
           <div className="divide-y divide-gray-50">
             {recentActivity.length === 0 ? (
               <p className="px-5 py-8 text-center text-sm text-gray-400">Noch keine Aktivitäten</p>
-            ) : recentActivity.map(absence => (
-              <div key={absence.id} className="flex items-start gap-3 px-5 py-3">
-                <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs ${statusColors[absence.status] ?? "bg-gray-100 text-gray-600"}`}>
-                  {absence.status === "approved" ? "✓" : absence.status === "rejected" ? "✗" : "…"}
+            ) : recentActivity.map(item => {
+              if (item.kind === "absence") {
+                const absence = item.data as typeof absences[0];
+                return (
+                  <div key={`a-${item.id}`} className="flex items-start gap-3 px-5 py-3">
+                    <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs ${statusColors[absence.status] ?? "bg-gray-100 text-gray-600"}`}>
+                      {absence.status === "approved" ? "✓" : absence.status === "rejected" ? "✗" : "…"}
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-900">
+                        Abwesenheitsantrag{" "}
+                        <span className={`font-medium ${absence.status === "approved" ? "text-green-600" : absence.status === "rejected" ? "text-red-500" : "text-amber-600"}`}>
+                          {absence.status === "approved" ? "genehmigt" : absence.status === "rejected" ? "abgelehnt" : "gestellt"}
+                        </span>
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {format(parseISO(absence.start_date), "d. MMM", { locale: de })} –{" "}
+                        {format(parseISO(absence.end_date), "d. MMM yyyy", { locale: de })}
+                        {absence.working_days != null && ` · ${absence.working_days} Tage`}
+                      </p>
+                    </div>
+                  </div>
+                );
+              }
+              const record = item.data as TimeRecord;
+              const mins = calcWorkedMinutes(record);
+              return (
+                <div key={`t-${item.id}`} className="flex items-start gap-3 px-5 py-3">
+                  <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-500">
+                    <Clock className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-900">
+                      Zeiteintrag · <span className="font-medium text-blue-600">{formatDuration(mins)}</span>
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {format(parseISO(record.work_date), "d. MMM", { locale: de })}
+                      {" · "}{record.start_time.slice(0, 5)} – {record.end_time!.slice(0, 5)}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-900">
-                    Abwesenheitsantrag{" "}
-                    <span className={`font-medium ${absence.status === "approved" ? "text-green-600" : absence.status === "rejected" ? "text-red-500" : "text-amber-600"}`}>
-                      {absence.status === "approved" ? "genehmigt" : absence.status === "rejected" ? "abgelehnt" : "gestellt"}
-                    </span>
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    {format(parseISO(absence.start_date), "d. MMM", { locale: de })} –{" "}
-                    {format(parseISO(absence.end_date), "d. MMM yyyy", { locale: de })}
-                    {absence.working_days != null && ` · ${absence.working_days} Tage`}
-                  </p>
-                  <p className="text-[10px] text-gray-300 mt-0.5">
-                    {format(parseISO(absence.created_at), "d. MMM yyyy, HH:mm", { locale: de })}
-                  </p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

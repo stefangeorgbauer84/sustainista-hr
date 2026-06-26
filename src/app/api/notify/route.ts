@@ -18,6 +18,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
+  // Verify target user belongs to same company
+  const { data: targetProfile } = await supabase
+    .from("profiles")
+    .select("company_id")
+    .eq("id", user_id)
+    .single()
+
+  if (!targetProfile || targetProfile.company_id !== profile.company_id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+
   const { error } = await supabase.from("notifications").insert({
     company_id: profile.company_id,
     user_id,

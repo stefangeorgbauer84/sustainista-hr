@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { headers } from "next/headers";
 import "./globals.css";
 import "./print.css";
 import { AuthProvider } from "@/context/AuthContext";
@@ -14,9 +15,10 @@ export const metadata: Metadata = {
   description: "Zeiterfassung, Urlaub & HR-Verwaltung",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const nonce = (await headers()).get("x-nonce") ?? "";
   return (
-    <html lang="de" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    <html lang="de" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`} {...(nonce ? { nonce } : {})}>
       <body className="min-h-full flex flex-col">
         <Providers>
           <AuthProvider>

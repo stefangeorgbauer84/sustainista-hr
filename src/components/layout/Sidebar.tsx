@@ -11,7 +11,7 @@ import {
   Clock, Calendar, CalendarDays, FileText, Home, Users,
   BarChart2, LogOut, Leaf, User, TrendingUp, UserCheck,
   Trophy, HeartPulse, Target, Lightbulb, ClipboardList, Globe,
-  Building2, LayoutGrid, MapPin,
+  Building2, LayoutGrid, MapPin, Settings,
 } from "lucide-react";
 import { TourStartButton } from "@/components/layout/GuidedTour";
 
@@ -20,44 +20,46 @@ interface NavItem {
   label: string;
   icon: React.ReactNode;
   badge?: number;
+  moduleKey?: string;
 }
 
 const employeeNav: NavItem[] = [
   { href: "/dashboard", label: "Übersicht", icon: <Home strokeWidth={1.5} className="h-4 w-4" /> },
-  { href: "/dashboard/time", label: "Zeiterfassung", icon: <Clock strokeWidth={1.5} className="h-4 w-4" /> },
-  { href: "/dashboard/leave", label: "Urlaub & Abwesenheit", icon: <Calendar strokeWidth={1.5} className="h-4 w-4" /> },
-  { href: "/dashboard/calendar", label: "Teamkalender", icon: <Users strokeWidth={1.5} className="h-4 w-4" /> },
-  { href: "/dashboard/documents", label: "Meine Dokumente", icon: <FileText strokeWidth={1.5} className="h-4 w-4" /> },
-  { href: "/dashboard/zeitkonto", label: "Zeitkonto", icon: <TrendingUp strokeWidth={1.5} className="h-4 w-4" /> },
-  { href: "/dashboard/wins", label: "Meine Wins", icon: <Trophy strokeWidth={1.5} className="h-4 w-4" /> },
-  { href: "/dashboard/schedule", label: "Dienstplan", icon: <CalendarDays strokeWidth={1.5} className="h-4 w-4" /> },
-  { href: "/dashboard/checkin", label: "Check-in", icon: <HeartPulse strokeWidth={1.5} className="h-4 w-4" /> },
-  { href: "/dashboard/okrs", label: "Meine OKRs", icon: <Target strokeWidth={1.5} className="h-4 w-4" /> },
-  { href: "/dashboard/kaizen", label: "Kaizen-Board", icon: <Lightbulb strokeWidth={1.5} className="h-4 w-4" /> },
-  { href: "/dashboard/review", label: "Performance Review", icon: <ClipboardList strokeWidth={1.5} className="h-4 w-4" /> },
-  { href: "/dashboard/culture", label: "Kultur & Werte", icon: <Globe strokeWidth={1.5} className="h-4 w-4" /> },
+  { href: "/dashboard/time", label: "Zeiterfassung", icon: <Clock strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "time" },
+  { href: "/dashboard/leave", label: "Urlaub & Abwesenheit", icon: <Calendar strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "leave" },
+  { href: "/dashboard/calendar", label: "Teamkalender", icon: <Users strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "calendar" },
+  { href: "/dashboard/documents", label: "Meine Dokumente", icon: <FileText strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "documents" },
+  { href: "/dashboard/zeitkonto", label: "Zeitkonto", icon: <TrendingUp strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "zeitkonto" },
+  { href: "/dashboard/wins", label: "Meine Wins", icon: <Trophy strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "wins" },
+  { href: "/dashboard/schedule", label: "Dienstplan", icon: <CalendarDays strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "schedule" },
+  { href: "/dashboard/checkin", label: "Check-in", icon: <HeartPulse strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "checkin" },
+  { href: "/dashboard/okrs", label: "Meine OKRs", icon: <Target strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "okrs" },
+  { href: "/dashboard/kaizen", label: "Kaizen-Board", icon: <Lightbulb strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "kaizen" },
+  { href: "/dashboard/review", label: "Performance Review", icon: <ClipboardList strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "review" },
+  { href: "/dashboard/culture", label: "Kultur & Werte", icon: <Globe strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "culture" },
   { href: "/dashboard/profile", label: "Mein Profil", icon: <User strokeWidth={1.5} className="h-4 w-4" /> },
 ];
 
 function buildAdminNav(pendingCount: number, changeRequestCount: number): NavItem[] {
   return [
-    { href: "/admin/leadership", label: "Leadership", icon: <TrendingUp strokeWidth={1.5} className="h-4 w-4" /> },
+    { href: "/admin/leadership", label: "Leadership", icon: <TrendingUp strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "leadership" },
     { href: "/admin", label: "Übersicht", icon: <Home strokeWidth={1.5} className="h-4 w-4" /> },
     { href: "/admin/employees", label: "Mitarbeiter", icon: <Users strokeWidth={1.5} className="h-4 w-4" /> },
     {
       href: "/admin/onboarding", label: "Onboarding",
       icon: <UserCheck strokeWidth={1.5} className="h-4 w-4" />,
       badge: pendingCount > 0 ? pendingCount : undefined,
+      moduleKey: "onboarding",
     },
-    { href: "/admin/schedule", label: "Dienstplan", icon: <CalendarDays strokeWidth={1.5} className="h-4 w-4" />, badge: changeRequestCount > 0 ? changeRequestCount : undefined },
-    { href: "/admin/time", label: "Zeiterfassung", icon: <Clock strokeWidth={1.5} className="h-4 w-4" /> },
-    { href: "/admin/leave", label: "Urlaubsanträge", icon: <Calendar strokeWidth={1.5} className="h-4 w-4" /> },
-    { href: "/admin/pulse", label: "Team-Puls", icon: <HeartPulse strokeWidth={1.5} className="h-4 w-4" /> },
-    { href: "/admin/performance", label: "Performance", icon: <ClipboardList strokeWidth={1.5} className="h-4 w-4" /> },
-    { href: "/admin/kaizen", label: "Kaizen-Board", icon: <Lightbulb strokeWidth={1.5} className="h-4 w-4" /> },
-    { href: "/admin/reports", label: "Reports", icon: <BarChart2 strokeWidth={1.5} className="h-4 w-4" /> },
-    { href: "/admin/documents", label: "Dokumente", icon: <FileText strokeWidth={1.5} className="h-4 w-4" /> },
-    { href: "/admin/locations", label: "Filialen", icon: <MapPin strokeWidth={1.5} className="h-4 w-4" /> },
+    { href: "/admin/schedule", label: "Dienstplan", icon: <CalendarDays strokeWidth={1.5} className="h-4 w-4" />, badge: changeRequestCount > 0 ? changeRequestCount : undefined, moduleKey: "schedule" },
+    { href: "/admin/time", label: "Zeiterfassung", icon: <Clock strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "time" },
+    { href: "/admin/leave", label: "Urlaubsanträge", icon: <Calendar strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "leave" },
+    { href: "/admin/pulse", label: "Team-Puls", icon: <HeartPulse strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "pulse" },
+    { href: "/admin/performance", label: "Performance", icon: <ClipboardList strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "performance" },
+    { href: "/admin/kaizen", label: "Kaizen-Board", icon: <Lightbulb strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "kaizen" },
+    { href: "/admin/reports", label: "Reports", icon: <BarChart2 strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "reports" },
+    { href: "/admin/documents", label: "Dokumente", icon: <FileText strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "documents" },
+    { href: "/admin/locations", label: "Filialen", icon: <MapPin strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "locations" },
   ];
 }
 
@@ -107,7 +109,11 @@ export default function Sidebar() {
     refetchInterval: 60_000,
   });
 
-  const nav = isAdminUser ? buildAdminNav(pendingCount, changeRequestCount) : employeeNav;
+  const enabledModules = company?.settings?.enabledModules;
+  const rawNav = isAdminUser ? buildAdminNav(pendingCount, changeRequestCount) : employeeNav;
+  const nav = enabledModules
+    ? rawNav.filter(item => !item.moduleKey || enabledModules.includes(item.moduleKey))
+    : rawNav;
 
   async function handleLogout() {
     try {
@@ -178,6 +184,18 @@ export default function Sidebar() {
           </p>
           <p className="text-[10px] text-gray-400 truncate">{user?.email}</p>
         </div>
+        {isAdminUser && (
+          <Link
+            href="/admin/settings"
+            className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition mb-0.5 ${
+              pathname.startsWith("/admin/settings") ? "font-medium" : "text-gray-500 hover:bg-gray-100"
+            }`}
+            style={pathname.startsWith("/admin/settings") ? { backgroundColor: `${primaryColor}1A`, color: primaryColor } : {}}
+          >
+            <Settings strokeWidth={1.5} className="h-4 w-4" />
+            Einstellungen
+          </Link>
+        )}
         <TourStartButton />
         <button
           onClick={handleLogout}

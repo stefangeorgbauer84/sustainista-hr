@@ -9,13 +9,13 @@ import {
 import { supabase } from "@/lib/supabase";
 import type { TimeRecord } from "@/types";
 import { toast } from "sonner";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
-import { Play, Square, Clock, AlertTriangle, Plus, X, Coffee, Printer } from "lucide-react";
+import { Play, Square, Clock, AlertTriangle, Plus, X, Coffee, Printer, Trash2 } from "lucide-react";
 
 const manualSchema = z.object({
   date: z.string().min(1, "Datum erforderlich"),
@@ -37,6 +37,12 @@ export default function TimePage() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year] = useState(now.getFullYear());
   const [showManual, setShowManual] = useState(false);
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   const { data: running } = useQuery<TimeRecord | null>({
     queryKey: ["running", employee?.id],
@@ -73,6 +79,15 @@ export default function TimePage() {
       toast.success("Zeiterfassung gestoppt");
     },
     onError: () => toast.error("Fehler beim Stoppen"),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("time_records").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["time-records"] }); toast.success("Eintrag gelöscht"); },
+    onError: () => toast.error("Fehler beim Löschen"),
   });
 
   const addBreakMutation = useMutation({
@@ -144,6 +159,14 @@ export default function TimePage() {
         (parseInt(watchStart.split(":")[0]) * 60 + parseInt(watchStart.split(":")[1] || "0")) - (watchBreak ?? 0))
     : 0;
 
+  function getElapsedLabel(startTime: string): string {
+    const [h, m] = startTime.split(":").map(Number);
+    const elapsed = Math.max(0, now.getHours() * 60 + now.getMinutes() - (h * 60 + m));
+    const hh = Math.floor(elapsed / 60);
+    const mm = elapsed % 60;
+    return hh > 0 ? `${hh}h ${mm}m` : `${mm}m`;
+  }
+
   const MONTHS = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
 
   return (
@@ -178,9 +201,12 @@ export default function TimePage() {
           <div>
             <p className="text-sm font-medium text-gray-700">Heute, {format(now, "d. MMMM", { locale: de })}</p>
             {running && (
-              <p className="mt-1 text-2xl font-semibold text-[#4F772D]">
-                Läuft seit {running.start_time} Uhr
-              </p>
+              <div className="mt-1">
+                <p className="text-2xl font-semibold text-[#4F772D]">
+                  {getElapsedLabel(running.start_time)}
+                </p>
+                <p className="text-xs text-gray-400">Gestartet um {running.start_time.slice(0,5)} Uhr</p>
+              </div>
             )}
           </div>
           {running ? (
@@ -334,6 +360,17 @@ export default function TimePage() {
                         className="text-xs text-amber-600 underline underline-offset-2"
                       >
                         + 30 Min. Pause
+                      </button>
+                    )}
+                    {/* Improvement 6: Delete own manual/pending entries */}
+                    {(entry.status === "submitted" || entry.status === "draft") && entry.created_via === "manual" && (
+                      <button
+                        onClick={() => deleteMutation.mutate(entry.id)}
+                        disabled={deleteMutation.isPending}
+                        title="Eintrag löschen"
+                        className="rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-400 transition disabled:opacity-40"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
                       </button>
                     )}
                     <div className="text-right">

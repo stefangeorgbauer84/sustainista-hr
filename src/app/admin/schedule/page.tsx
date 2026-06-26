@@ -81,6 +81,7 @@ export default function AdminSchedulePage() {
   const [form, setForm] = useState({ start_time: "06:00", end_time: "14:00", break_minutes: "30", notes: "" });
   const [summaryMonth, setSummaryMonth] = useState(today.getMonth() + 1);
   const [conflicts, setConflicts] = useState<string[]>([]);
+  const [showWhatsAppConfirm, setShowWhatsAppConfirm] = useState(false);
 
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const weekStartStr = toDateStr(weekStart);
@@ -288,6 +289,11 @@ export default function AdminSchedulePage() {
 
   function shareToWhatsApp() {
     if (!locationId || empLocs.length === 0) { toast("Bitte Filiale mit Mitarbeiter:innen wählen"); return; }
+    setShowWhatsAppConfirm(true);
+  }
+
+  function doShareToWhatsApp() {
+    setShowWhatsAppConfirm(false);
     const text = generateScheduleText();
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
   }
@@ -306,6 +312,7 @@ export default function AdminSchedulePage() {
 
   /* ─── Render ─── */
   return (
+    <>
     <div className="space-y-5">
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -624,6 +631,30 @@ export default function AdminSchedulePage() {
         </div>
       )}
     </div>
+
+    {showWhatsAppConfirm && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+          <h3 className="text-base font-semibold text-gray-900 mb-2">Dienstplan teilen?</h3>
+          <p className="text-sm text-gray-600 mb-1">Der Dienstplan enthält Namen und Arbeitszeiten deiner Mitarbeiter:innen.</p>
+          <p className="text-xs text-gray-400 mb-5">
+            Diese Daten werden als WhatsApp-Nachricht an Meta-Server übertragen (DSGVO Art. 6 Abs. 1 lit. b).
+            Teile den Plan nur in geschlossenen Gruppen mit betroffenen Mitarbeiter:innen.
+          </p>
+          <div className="flex gap-3">
+            <button onClick={() => setShowWhatsAppConfirm(false)}
+              className="flex-1 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 transition">
+              Abbrechen
+            </button>
+            <button onClick={doShareToWhatsApp}
+              className="flex-1 rounded-lg bg-[#25D366] px-4 py-2 text-sm font-medium text-white hover:bg-[#1da851] transition">
+              Teilen
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

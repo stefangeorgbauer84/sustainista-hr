@@ -7,12 +7,25 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { useEffect } from "react";
-import { User, Lock, Building, Calendar } from "lucide-react";
+import { useEffect, useState } from "react";
+import { User, Lock, Building, Calendar, Eye, EyeOff } from "lucide-react";
+import { format, parseISO } from "date-fns";
+import { de } from "date-fns/locale";
+
+const EMPLOYMENT_LABELS: Record<string, string> = {
+  vollzeit: "Vollzeit",
+  teilzeit: "Teilzeit",
+  geringfuegig: "Geringfügig",
+  lehrling: "Lehrling",
+  freier_dienstnehmer: "Freier Dienstnehmer",
+  praktikant: "Praktikant",
+  werkvertrag: "Werkvertrag",
+};
 
 const profileSchema = z.object({
   first_name: z.string().min(1),
   last_name: z.string().min(1),
+  contact_email: z.string().email("Ungültige E-Mail").optional().or(z.literal("")),
   contact_phone: z.string().optional(),
   bank_iban: z.string().optional(),
 });
@@ -46,6 +59,8 @@ export default function ProfilePage() {
     enabled: !!employee,
   });
 
+  const [showIban, setShowIban] = useState(false);
+
   const { register: regP, handleSubmit: hsP, reset: resetP, formState: { errors: eP } } = useForm<ProfileForm>({
     resolver: zodResolver(profileSchema),
   });
@@ -59,6 +74,7 @@ export default function ProfilePage() {
       resetP({
         first_name: employee.first_name,
         last_name: employee.last_name,
+        contact_email: employee.contact_email ?? "",
         contact_phone: employee.contact_phone ?? "",
         bank_iban: employee.bank_iban ?? "",
       });
@@ -69,7 +85,7 @@ export default function ProfilePage() {
     mutationFn: async (data: ProfileForm) => {
       const { error } = await supabase
         .from("employees")
-        .update({ first_name: data.first_name, last_name: data.last_name, contact_phone: data.contact_phone || null, bank_iban: data.bank_iban || null })
+        .update({ first_name: data.first_name, last_name: data.last_name, contact_email: data.contact_email || null, contact_phone: data.contact_phone || null, bank_iban: data.bank_iban || null })
         .eq("id", employee!.id);
       if (error) throw error;
       await supabase.auth.updateUser({ data: { full_name: `${data.first_name} ${data.last_name}` } });
@@ -166,11 +182,19 @@ export default function ProfilePage() {
             <Field label="Nachname" error={eP.last_name?.message}>
               <input {...regP("last_name")} className={inp} />
             </Field>
+            <Field label="E-Mail" error={eP.contact_email?.message}>
+              <input {...regP("contact_email")} type="email" placeholder="name@beispiel.at" className={inp} />
+            </Field>
             <Field label="Telefon">
               <input {...regP("contact_phone")} placeholder="+43 664 123 456" className={inp} />
             </Field>
             <Field label="IBAN / Bankverbindung">
-              <input {...regP("bank_iban")} placeholder="AT12 3456 7890 1234 5678" className={inp} />
+              <div className="relative">
+                <input {...regP("bank_iban")} type={showIban ? "text" : "password"} placeholder="AT12 3456 7890 1234 5678" className={`${inp} pr-10`} />
+                <button type="button" onClick={() => setShowIban(!showIban)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  {showIban ? <EyeOff className="h-4 w-4" strokeWidth={1.5} /> : <Eye className="h-4 w-4" strokeWidth={1.5} />}
+                </button>
+              </div>
             </Field>
           </div>
           <div className="flex justify-end">
@@ -188,9 +212,9 @@ export default function ProfilePage() {
           <h2 className="text-sm font-semibold text-gray-900">Dienstdaten</h2>
         </div>
         <div className="grid grid-cols-2 gap-3 text-sm">
-          <div><p className="text-xs text-gray-400 mb-0.5">Eintrittsdatum</p><p className="font-medium text-gray-900">{employee.entry_date}</p></div>
-          <div><p className="text-xs text-gray-400 mb-0.5">E-Mail</p><p className="font-medium text-gray-900">{employee.contact_email ?? "—"}</p></div>
-          <div><p className="text-xs text-gray-400 mb-0.5">Beschäftigungsart</p><p className="font-medium text-gray-900">{employee.employment_type}</p></div>
+          <div><p className="text-xs text-gray-400 mb-0.5">Eintrittsdatum</p><p className="font-medium text-gray-900">{format(parseISO(employee.entry_date), "d. MMMM yyyy", { locale: de })}</p></div>
+          <div><p className="text-xs text-gray-400 mb-0.5">Mitarbeiternummer</p><p className="font-medium text-gray-900">{employee.employee_number ?? "—"}</p></div>
+          <div><p className="text-xs text-gray-400 mb-0.5">Beschäftigungsart</p><p className="font-medium text-gray-900">{EMPLOYMENT_LABELS[employee.employment_type] ?? employee.employment_type}</p></div>
           <div><p className="text-xs text-gray-400 mb-0.5">Stunden/Woche</p><p className="font-medium text-gray-900">{employee.hours_per_week}h</p></div>
         </div>
         <p className="mt-3 text-xs text-gray-400">Änderungen an Dienstdaten bitte an die HR-Abteilung wenden.</p>

@@ -12,9 +12,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, differenceInDays } from "date-fns";
 import { de } from "date-fns/locale";
-import { Calendar, Plus, X, Upload, Download } from "lucide-react";
+import { Calendar, Plus, X, Upload, Download, ChevronLeft, ChevronRight, AlertCircle } from "lucide-react";
+import { getHolidayName } from "@/lib/holidays";
 import { useState, useRef } from "react";
 
 const schema = z.object({
@@ -47,6 +48,7 @@ export default function LeavePage() {
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const currentYear = new Date().getFullYear();
+  const [leaveYear, setLeaveYear] = useState(currentYear);
 
   const { data: absenceTypes = [] } = useQuery<AbsenceType[]>({
     queryKey: ["absence-types"],
@@ -54,18 +56,18 @@ export default function LeavePage() {
   });
 
   const { data: holidays = [] } = useQuery<string[]>({
-    queryKey: ["holidays", currentYear],
-    queryFn: () => getHolidaysForYear(currentYear),
+    queryKey: ["holidays", leaveYear],
+    queryFn: () => getHolidaysForYear(leaveYear),
   });
 
   const { data: leaveBalance } = useQuery<LeaveBalance | null>({
-    queryKey: ["leave-balance", employee?.id, currentYear],
+    queryKey: ["leave-balance", employee?.id, leaveYear],
     queryFn: async () => {
       const { data } = await supabase
         .from("leave_balances")
         .select("*")
         .eq("employee_id", employee!.id)
-        .eq("year", currentYear)
+        .eq("year", leaveYear)
         .single();
       return data ?? null;
     },
@@ -73,8 +75,18 @@ export default function LeavePage() {
   });
 
   const { data: absences = [], isLoading } = useQuery<Absence[]>({
-    queryKey: ["absences", employee?.id],
-    queryFn: () => getAbsencesForEmployee(employee!.id),
+    queryKey: ["absences", employee?.id, leaveYear],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("absences")
+        .select("*")
+        .eq("employee_id", employee!.id)
+        .gte("start_date", `${leaveYear}-01-01`)
+        .lte("start_date", `${leaveYear}-12-31`)
+        .order("start_date", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as Absence[];
+    },
     enabled: !!employee,
   });
 
@@ -92,8 +104,11 @@ export default function LeavePage() {
 
   const selectedType = absenceTypes.find(t => t.id === watchTypeId);
   const entitlement = leaveBalance?.entitlement_days ?? 25;
+  const carryOver = leaveBalance?.carry_over_days ?? 0;
+  const totalEntitlement = entitlement + carryOver;
   const taken = leaveBalance?.taken_days ?? 0;
-  const vacationLeft = entitlement - taken;
+  const approvedPending = leaveBalance?.approved_pending_days ?? 0;
+  const vacationLeft = totalEntitlement - taken - approvedPending;
 
   const mutation = useMutation({
     mutationFn: async (data: FormData) => {
@@ -129,42 +144,126 @@ export default function LeavePage() {
     onError: () => { setUploading(false); toast.error("Fehler beim Einreichen"); },
   });
 
+  // Improvement 2: Cancel pending leave request
+  const cancelMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("absences")
+        .update({ status: "cancelled" })
+        .eq("id", id)
+        .eq("employee_id", employee!.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["absences"] });
+      qc.invalidateQueries({ queryKey: ["leave-balance"] });
+      toast.success("Antrag storniert");
+    },
+    onError: () => toast.error("Fehler beim Stornieren"),
+  });
+
   function downloadUrl(storagePath: string) {
     const { data } = supabase.storage.from("documents").getPublicUrl(storagePath);
     return data.publicUrl;
   }
+
+  const usedPct = totalEntitlement > 0 ? Math.min(100, Math.round((taken / totalEntitlement) * 100)) : 0;
+  const pendingPct = totalEntitlement > 0 ? Math.min(100 - usedPct, Math.round((approvedPending / totalEntitlement) * 100)) : 0;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Urlaub & Abwesenheit</h1>
-          <p className="mt-0.5 text-sm text-gray-500">
-            {vacationLeft} von {entitlement} Urlaubstagen verbleibend
-          </p>
+          {/* Improvement 8: Year switcher */}
+          <div className="mt-0.5 flex items-center gap-1">
+            <button onClick={() => setLeaveYear(y => y - 1)} className="rounded p-0.5 hover:bg-gray-100 transition">
+              <ChevronLeft className="h-3.5 w-3.5 text-gray-400" strokeWidth={2} />
+            </button>
+            <span className="text-sm text-gray-500 w-10 text-center">{leaveYear}</span>
+            <button
+              onClick={() => setLeaveYear(y => y + 1)}
+              disabled={leaveYear >= currentYear}
+              className="rounded p-0.5 hover:bg-gray-100 transition disabled:opacity-30"
+            >
+              <ChevronRight className="h-3.5 w-3.5 text-gray-400" strokeWidth={2} />
+            </button>
+          </div>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 rounded-lg bg-[#4F772D] px-4 py-2 text-sm font-medium text-white hover:bg-[#31572C] transition"
-        >
-          {showForm ? <X className="h-4 w-4" strokeWidth={1.5} /> : <Plus className="h-4 w-4" strokeWidth={1.5} />}
-          {showForm ? "Abbrechen" : "Antrag stellen"}
-        </button>
+        {leaveYear === currentYear && (
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-2 rounded-lg bg-[#4F772D] px-4 py-2 text-sm font-medium text-white hover:bg-[#31572C] transition"
+          >
+            {showForm ? <X className="h-4 w-4" strokeWidth={1.5} /> : <Plus className="h-4 w-4" strokeWidth={1.5} />}
+            {showForm ? "Abbrechen" : "Antrag stellen"}
+          </button>
+        )}
       </div>
 
-      {/* Fortschrittsbalken Urlaub */}
-      <div>
-        <div className="mb-1.5 flex justify-between text-xs text-gray-500">
-          <span>{taken} verbraucht</span>
-          <span>{vacationLeft} verbleibend</span>
+      {/* Improvement 7: Detailed leave balance breakdown */}
+      <div className="rounded-xl border border-gray-200 bg-white p-5 space-y-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div>
+            <p className="text-xs text-gray-400">Anspruch {leaveYear}</p>
+            <p className="mt-0.5 text-2xl font-bold text-gray-900">{entitlement}</p>
+            <p className="text-[10px] text-gray-400">Tage</p>
+          </div>
+          {carryOver > 0 && (
+            <div>
+              <p className="text-xs text-gray-400">Übertrag Vorjahr</p>
+              <p className="mt-0.5 text-2xl font-bold text-blue-600">+{carryOver}</p>
+              <p className="text-[10px] text-gray-400">Tage</p>
+            </div>
+          )}
+          <div>
+            <p className="text-xs text-gray-400">Verbraucht</p>
+            <p className="mt-0.5 text-2xl font-bold text-gray-700">{taken}</p>
+            <p className="text-[10px] text-gray-400">Tage genommen</p>
+          </div>
+          {approvedPending > 0 && (
+            <div>
+              <p className="text-xs text-gray-400">Genehmigt / offen</p>
+              <p className="mt-0.5 text-2xl font-bold text-amber-500">{approvedPending}</p>
+              <p className="text-[10px] text-gray-400">Tage reserviert</p>
+            </div>
+          )}
+          <div>
+            <p className="text-xs text-gray-400">Verbleibend</p>
+            <p className={`mt-0.5 text-2xl font-bold ${vacationLeft <= 3 ? "text-red-500" : "text-[#4F772D]"}`}>{vacationLeft}</p>
+            <p className="text-[10px] text-gray-400">von {totalEntitlement} Tagen</p>
+          </div>
         </div>
-        <div className="h-2.5 rounded-full bg-gray-200">
-          <div
-            className="h-2.5 rounded-full bg-[#4F772D] transition-all"
-            style={{ width: `${Math.min(100, (taken / entitlement) * 100)}%` }}
-          />
+
+        <div>
+          <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden flex">
+            <div className="h-full bg-[#4F772D] transition-all" style={{ width: `${usedPct}%` }} />
+            <div className="h-full bg-amber-300 transition-all" style={{ width: `${pendingPct}%` }} />
+          </div>
+          <div className="mt-1.5 flex items-center gap-4 text-[10px] text-gray-400">
+            <span className="flex items-center gap-1">
+              <span className="h-2 w-2 rounded-full bg-[#4F772D] inline-block" />Verbraucht
+            </span>
+            {approvedPending > 0 && (
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-amber-300 inline-block" />Reserviert
+              </span>
+            )}
+            <span className="flex items-center gap-1">
+              <span className="h-2 w-2 rounded-full bg-gray-100 border border-gray-200 inline-block" />Verfügbar
+            </span>
+          </div>
         </div>
       </div>
+
+      {leaveYear === currentYear && vacationLeft <= 5 && vacationLeft >= 0 && (
+        <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <AlertCircle className="h-4 w-4 shrink-0 text-amber-500 mt-0.5" strokeWidth={1.5} />
+          <p className="text-sm text-amber-700">
+            Nur noch <strong>{vacationLeft} Urlaubstage</strong> verbleibend — bitte frühzeitig planen.
+          </p>
+        </div>
+      )}
 
       {showForm && (
         <div className="rounded-xl border border-gray-200 bg-white p-5">
@@ -248,48 +347,100 @@ export default function LeavePage() {
       <div className="rounded-xl border border-gray-200 bg-white">
         <div className="border-b border-gray-100 px-5 py-4 flex items-center gap-2">
           <Calendar className="h-4 w-4 text-gray-400" strokeWidth={1.5} />
-          <h2 className="text-sm font-medium text-gray-900">Meine Anträge</h2>
+          <h2 className="text-sm font-medium text-gray-900">Meine Anträge {leaveYear}</h2>
         </div>
         <div className="divide-y divide-gray-50">
           {isLoading ? (
             <p className="px-5 py-8 text-center text-sm text-gray-400">Wird geladen…</p>
           ) : absences.length === 0 ? (
-            <p className="px-5 py-8 text-center text-sm text-gray-400">Noch keine Anträge</p>
+            <p className="px-5 py-8 text-center text-sm text-gray-400">Keine Anträge in {leaveYear}</p>
           ) : (
             absences.map(absence => {
               const type = absenceTypes.find(t => t.id === absence.absence_type_id);
               return (
-                <div key={absence.id} className="flex items-center justify-between px-5 py-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-gray-900">{type?.name ?? "Abwesenheit"}</p>
-                      {absence.doctor_note && (
-                        <a
-                          href={downloadUrl(absence.doctor_note)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex items-center gap-1 text-[10px] text-[#4F772D] hover:underline"
+                <div key={absence.id} className="px-5 py-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        {/* Improvement 4: Absence type color dot */}
+                        {type?.color_hex && (
+                          <span
+                            className="h-2.5 w-2.5 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: type.color_hex }}
+                          />
+                        )}
+                        <p className="text-sm font-medium text-gray-900">{type?.name ?? "Abwesenheit"}</p>
+                        {absence.doctor_note && (
+                          <a
+                            href={downloadUrl(absence.doctor_note)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center gap-1 text-[10px] text-[#4F772D] hover:underline"
+                          >
+                            <Download className="h-3 w-3" strokeWidth={1.5} />
+                            Nachweis
+                          </a>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {format(parseISO(absence.start_date), "d. MMM", { locale: de })} –{" "}
+                        {format(parseISO(absence.end_date), "d. MMM yyyy", { locale: de })}
+                        {absence.working_days != null && ` · ${absence.working_days} Werktage`}
+                      </p>
+                      {absence.reason && <p className="text-xs text-gray-400 italic mt-0.5">{absence.reason}</p>}
+                    </div>
+                    <div className="ml-3 flex items-center gap-2 flex-shrink-0">
+                      <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${statusColors[absence.status] ?? "bg-gray-100 text-gray-500"}`}>
+                        {statusLabels[absence.status] ?? absence.status}
+                      </span>
+                      {/* Improvement 2: Cancel button for pending requests */}
+                      {absence.status === "requested" && (
+                        <button
+                          onClick={() => cancelMutation.mutate(absence.id)}
+                          disabled={cancelMutation.isPending}
+                          title="Antrag stornieren"
+                          className="rounded-full p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 transition disabled:opacity-40"
                         >
-                          <Download className="h-3 w-3" strokeWidth={1.5} />
-                          Nachweis
-                        </a>
+                          <X className="h-3.5 w-3.5" strokeWidth={2} />
+                        </button>
                       )}
                     </div>
-                    <p className="text-xs text-gray-400">
-                      {format(parseISO(absence.start_date), "d. MMM", { locale: de })} –{" "}
-                      {format(parseISO(absence.end_date), "d. MMM yyyy", { locale: de })}
-                      {absence.working_days != null && ` · ${absence.working_days} Werktage`}
-                    </p>
-                    {absence.reason && <p className="text-xs text-gray-400 italic">{absence.reason}</p>}
                   </div>
-                  <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${statusColors[absence.status] ?? "bg-gray-100 text-gray-500"}`}>
-                    {statusLabels[absence.status] ?? absence.status}
-                  </span>
+                  {/* Improvement 3: Show admin rejection note */}
+                  {absence.status === "rejected" && absence.rejection_note && (
+                    <div className="mt-2 rounded-lg bg-red-50 border border-red-100 px-3 py-2">
+                      <p className="text-xs text-red-600">
+                        <span className="font-medium">Ablehnungsgrund:</span> {absence.rejection_note}
+                      </p>
+                    </div>
+                  )}
                 </div>
               );
             })
           )}
         </div>
+      </div>
+      <HolidaysSection year={leaveYear} holidays={holidays} />
+    </div>
+  );
+}
+
+function HolidaysSection({ year, holidays }: { year: number; holidays: string[] }) {
+  const yearHolidays = holidays.map(d => ({ date: d, name: getHolidayName(d) })).filter(h => h.name);
+  if (!yearHolidays.length) return null;
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white">
+      <div className="border-b border-gray-100 px-5 py-4">
+        <p className="text-sm font-medium text-gray-900">Österreichische Feiertage {year}</p>
+        <p className="text-xs text-gray-400 mt-0.5">Gesetzliche Feiertage gem. § 7 ARG</p>
+      </div>
+      <div className="divide-y divide-gray-50">
+        {yearHolidays.map(h => (
+          <div key={h.date} className="flex items-center justify-between px-5 py-2.5">
+            <span className="text-sm text-gray-700">{h.name}</span>
+            <span className="text-xs text-gray-400 font-mono">{h.date}</span>
+          </div>
+        ))}
       </div>
     </div>
   );

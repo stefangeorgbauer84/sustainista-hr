@@ -4,6 +4,11 @@ export type { User, Session }
 
 export type UserRole = 'super_admin' | 'company_admin' | 'hr_manager' | 'hr_staff' | 'manager' | 'payroll' | 'employee' | 'read_only'
 
+export interface CompanySettings {
+  enabledModules?: string[]
+  [key: string]: unknown
+}
+
 export interface Company {
   id: string
   name: string
@@ -13,7 +18,7 @@ export interface Company {
     primaryColor?: string
     icon?: string
   }
-  settings: Record<string, unknown>
+  settings: CompanySettings
   subscription_tier: string
   is_active: boolean
   created_at: string

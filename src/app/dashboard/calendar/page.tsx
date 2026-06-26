@@ -10,6 +10,7 @@ import {
 import { de } from "date-fns/locale";
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, Users } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 type EmpRow = { id: string; first_name: string; last_name: string };
 type AbsenceRow = {
@@ -21,19 +22,30 @@ type AbsenceRow = {
 };
 
 const CODE_COLORS: Record<string, string> = {
-  urlaub:      "bg-[#4F772D]/20 text-[#4F772D] border-[#4F772D]/30",
+  urlaub:       "bg-[#4F772D]/20 text-[#4F772D] border-[#4F772D]/30",
   krankenstand: "bg-red-100 text-red-600 border-red-200",
-  unbezahlt:   "bg-gray-200 text-gray-600 border-gray-300",
+  unbezahlt:    "bg-gray-200 text-gray-600 border-gray-300",
   sonderurlaub: "bg-purple-100 text-purple-600 border-purple-200",
+  homeoffice:   "bg-cyan-100 text-cyan-700 border-cyan-200",
+  zeitausgleich:"bg-orange-100 text-orange-700 border-orange-200",
 };
 const CODE_SHORT: Record<string, string> = {
   urlaub: "U", krankenstand: "K", unbezahlt: "UB", sonderurlaub: "S",
+  homeoffice: "HO", zeitausgleich: "ZA",
+};
+const CODE_LABEL: Record<string, string> = {
+  urlaub: "Urlaub", krankenstand: "Krankenstand",
+  unbezahlt: "Unbezahlt", sonderurlaub: "Sonderurlaub",
+  homeoffice: "Homeoffice", zeitausgleich: "Zeitausgleich",
 };
 const DEFAULT_COLOR = "bg-blue-100 text-blue-600 border-blue-200";
 const DEFAULT_SHORT = "A";
 
 export default function TeamCalendarPage() {
+  const { employee } = useAuth();
   const [current, setCurrent] = useState(new Date());
+  const thisMonth = new Date();
+  const isCurrentMonth = current.getFullYear() === thisMonth.getFullYear() && current.getMonth() === thisMonth.getMonth();
 
   const { data: employees = [] } = useQuery<EmpRow[]>({
     queryKey: ["all-employees-cal"],
@@ -94,6 +106,11 @@ export default function TeamCalendarPage() {
           <p className="mt-0.5 text-sm text-gray-500">Abwesenheiten und Feiertage im Überblick</p>
         </div>
         <div className="flex items-center gap-2">
+          {!isCurrentMonth && (
+            <button onClick={() => setCurrent(new Date())} className="rounded-lg border border-[#4F772D]/30 bg-[#4F772D]/5 px-3 py-1.5 text-xs font-medium text-[#4F772D] hover:bg-[#4F772D]/10 transition">
+              Heute
+            </button>
+          )}
           <button onClick={() => setCurrent(subMonths(current, 1))} className="rounded-lg border border-gray-200 p-1.5 hover:bg-gray-50 transition">
             <ChevronLeft className="h-4 w-4 text-gray-500" strokeWidth={1.5} />
           </button>
@@ -151,15 +168,18 @@ export default function TeamCalendarPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {employees.map(emp => (
-              <tr key={emp.id} className="hover:bg-gray-50/50">
-                <td className="sticky left-0 bg-white px-4 py-2.5 z-10 border-r border-gray-100">
+            {employees.map(emp => {
+              const isMe = emp.id === employee?.id;
+              return (
+              <tr key={emp.id} className={`hover:bg-gray-50/50 ${isMe ? "bg-[#4F772D]/5" : ""}`}>
+                <td className={`sticky left-0 px-4 py-2.5 z-10 border-r border-gray-100 ${isMe ? "bg-[#4F772D]/5" : "bg-white"}`}>
                   <div className="flex items-center gap-2">
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#4F772D]/10 text-[10px] font-bold text-[#4F772D]">
+                    <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${isMe ? "bg-[#4F772D] text-white" : "bg-[#4F772D]/10 text-[#4F772D]"}`}>
                       {emp.first_name[0]}{emp.last_name[0]}
                     </div>
-                    <span className="font-medium text-gray-900 whitespace-nowrap text-xs">
+                    <span className={`whitespace-nowrap text-xs ${isMe ? "font-semibold text-[#4F772D]" : "font-medium text-gray-900"}`}>
                       {emp.first_name} {emp.last_name[0]}.
+                      {isMe && <span className="ml-1 text-[9px] text-[#4F772D]/60">(du)</span>}
                     </span>
                   </div>
                 </td>
@@ -193,10 +213,7 @@ export default function TeamCalendarPage() {
           {Object.entries(CODE_SHORT).map(([code, short]) => (
             <div key={code} className="flex items-center gap-1.5">
               <div className={`flex h-4 w-4 items-center justify-center rounded border text-[8px] font-bold ${CODE_COLORS[code] ?? DEFAULT_COLOR}`}>{short}</div>
-              <span className="text-xs text-gray-500">{{
-                urlaub: "Urlaub", krankenstand: "Krankenstand",
-                unbezahlt: "Unbezahlt", sonderurlaub: "Sonderurlaub",
-              }[code]}</span>
+              <span className="text-xs text-gray-500">{CODE_LABEL[code] ?? code}</span>
             </div>
           ))}
           <div className="flex items-center gap-1.5">

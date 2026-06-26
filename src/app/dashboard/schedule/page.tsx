@@ -60,6 +60,7 @@ export default function EmployeeSchedulePage() {
   }, [shifts]);
 
   const weekShifts = useMemo(() => weekDays.map((d) => shiftMap[toDateStr(d)] ?? null), [weekDays, shiftMap]);
+  const weeklyMins = weekShifts.reduce((s, sh) => sh ? s + calcShiftMinutes(sh.start_time, sh.end_time, sh.break_minutes) : s, 0);
 
   const monthMins = shifts.reduce((s, sh) => s + calcShiftMinutes(sh.start_time, sh.end_time, sh.break_minutes), 0);
   const targetMins = Math.round((employee?.hours_per_week ?? 40) * 52 / 12) * 60;
@@ -143,11 +144,17 @@ export default function EmployeeSchedulePage() {
           <button onClick={() => setWeekStart(addDays(weekStart,-7))} className="rounded-lg border border-gray-200 p-1.5 hover:bg-gray-50 transition">
             <ChevronLeft className="h-3.5 w-3.5 text-gray-500" strokeWidth={1.5} />
           </button>
-          <span className="flex-1 text-sm font-medium text-gray-700 text-center">{weekLabel}</span>
+          <div className="flex-1 text-center">
+            <p className="text-sm font-medium text-gray-700">{weekLabel}</p>
+            {weeklyMins > 0 && <p className="text-xs text-[#4F772D] mt-0.5">{(weeklyMins / 60).toFixed(1)}h geplant</p>}
+          </div>
           <button onClick={() => setWeekStart(addDays(weekStart,7))} className="rounded-lg border border-gray-200 p-1.5 hover:bg-gray-50 transition">
             <ChevronRight className="h-3.5 w-3.5 text-gray-500" strokeWidth={1.5} />
           </button>
-          <button onClick={() => setWeekStart(getMonday(today))} className="text-xs text-[#4F772D] underline underline-offset-2">Heute</button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={() => setWeekStart(getMonday(today))} className="text-xs text-[#4F772D] underline underline-offset-2">Heute</button>
+            <button onClick={() => setWeekStart(addDays(getMonday(today), 7))} className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2">Nächste Wo. →</button>
+          </div>
         </div>
 
         {isLoading ? (
