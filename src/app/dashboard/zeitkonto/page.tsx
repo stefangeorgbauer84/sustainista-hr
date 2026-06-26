@@ -19,7 +19,7 @@ interface MonthSummary {
   diff: number;
 }
 
-function getTargetMinutes(year: number, month: number): number {
+function getTargetMinutes(year: number, month: number, hoursPerWeek = 40): number {
   let workdays = 0;
   const days = getDaysInMonth(new Date(year, month - 1));
   for (let d = 1; d <= days; d++) {
@@ -27,7 +27,7 @@ function getTargetMinutes(year: number, month: number): number {
     const iso = format(date, "yyyy-MM-dd");
     if (!isWeekend(date) && !isHoliday(iso)) workdays++;
   }
-  return workdays * 8 * 60;
+  return Math.round(workdays * (hoursPerWeek / 5) * 60);
 }
 
 export default function ZeitkontoPage() {
@@ -62,7 +62,7 @@ export default function ZeitkontoPage() {
     const prefix = `${year}-${String(month).padStart(2, "0")}`;
     const entries = allRecords.filter(e => e.work_date.startsWith(prefix));
     const actual = entries.reduce((s, e) => s + calcWorkedMinutes(e), 0);
-    const target = getTargetMinutes(year, month);
+    const target = getTargetMinutes(year, month, employee?.hours_per_week ?? 40);
     return {
       year, month,
       label: format(new Date(year, month - 1), "MMM yyyy", { locale: de }),

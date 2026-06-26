@@ -1,4 +1,7 @@
+"use client";
+
 import { Leaf, Zap, Heart, TrendingUp, Users, Globe, Lightbulb, RefreshCw, Target, Eye } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 const VALUES = [
   {
@@ -76,6 +79,8 @@ const RITUALS = [
 ];
 
 export default function CulturePage() {
+  const { company } = useAuth();
+  const companyName = company?.name ?? "HR Tool";
   return (
     <div className="space-y-10 pb-10">
       {/* Hero */}
@@ -85,7 +90,7 @@ export default function CulturePage() {
             <Leaf className="h-5 w-5 text-white" strokeWidth={1.5} />
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-white/60">Sustainista GmbH</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-white/60">{companyName}</p>
             <h1 className="text-xl font-bold">Kultur & Werte</h1>
           </div>
         </div>
@@ -122,7 +127,7 @@ export default function CulturePage() {
       <section>
         <div className="mb-4 flex items-center gap-3">
           <RefreshCw className="h-5 w-5 text-[#4F772D]" strokeWidth={1.5} />
-          <h2 className="text-base font-semibold text-gray-900">Lean Thinking bei Sustainista</h2>
+          <h2 className="text-base font-semibold text-gray-900">Lean Thinking bei {companyName}</h2>
         </div>
         <p className="mb-5 text-sm text-gray-500 leading-relaxed">
           Lean Thinking kommt aus der Produktion — Toyota hat es erfunden. Heute ist es ein universelles Prinzip:

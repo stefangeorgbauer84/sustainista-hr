@@ -9,9 +9,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { useState } from "react";
-import { Plus, X, Pencil, Users, Mail, Phone, Calendar } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Plus, X, Pencil, Users, Mail, Phone, Calendar, Eye } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
+import { useAuth } from "@/context/AuthContext";
 
 const schema = z.object({
   first_name: z.string().min(1),
@@ -27,6 +29,8 @@ type FormData = z.infer<typeof schema>;
 
 export default function EmployeesPage() {
   const qc = useQueryClient();
+  const { isSuperAdmin, isAdminUser, viewAs } = useAuth();
+  const router = useRouter();
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Employee | null>(null);
 
@@ -126,7 +130,7 @@ export default function EmployeesPage() {
               <input {...register("last_name")} className={inputCls} placeholder="Muster" />
             </Field>
             <Field label="E-Mail" error={errors.contact_email?.message}>
-              <input {...register("contact_email")} type="email" className={inputCls} placeholder="m.muster@sustainista.net" />
+              <input {...register("contact_email")} type="email" className={inputCls} placeholder="m.muster@beispiel.at" />
             </Field>
             <Field label="Telefon">
               <input {...register("contact_phone")} className={inputCls} placeholder="+43 664 123 456" />
@@ -195,6 +199,16 @@ export default function EmployeesPage() {
                       </span>
                     </div>
                   </div>
+                  {isAdminUser && (
+                    <button
+                      onClick={() => { viewAs(emp); router.push("/dashboard"); }}
+                      className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 transition"
+                      title="Dashboard aus Sicht dieses Mitarbeiters anzeigen"
+                    >
+                      <Eye className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      Ansicht
+                    </button>
+                  )}
                   <Link href={`/admin/employees/${emp.id}`}
                     className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-50 transition">
                     Details →

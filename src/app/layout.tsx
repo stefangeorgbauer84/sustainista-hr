@@ -10,8 +10,8 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Sustainista HR — Mitarbeiterverwaltung",
-  description: "Zeiterfassung, Urlaub & HR-Verwaltung für die Sustainista GmbH",
+  title: "HR Tool — Mitarbeiterverwaltung",
+  description: "Zeiterfassung, Urlaub & HR-Verwaltung",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

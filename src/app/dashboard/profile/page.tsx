@@ -87,7 +87,39 @@ export default function ProfilePage() {
     onError: () => toast.error("Fehler beim Ändern des Passworts"),
   });
 
-  if (!employee) return null;
+  if (!employee) return (
+    <div className="max-w-2xl space-y-6">
+      <div>
+        <h1 className="text-xl font-semibold text-gray-900">Mein Profil</h1>
+        <p className="mt-0.5 text-sm text-gray-500">Persönliche Daten und Einstellungen</p>
+      </div>
+      <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
+        <p className="text-sm font-medium text-gray-700">Kein Mitarbeiterprofil verknüpft</p>
+        <p className="mt-1 text-xs text-gray-400">
+          Dieses Konto hat kein Mitarbeiterprofil. Passwortänderung ist trotzdem möglich.
+        </p>
+      </div>
+      <div className="rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-4 text-sm font-semibold text-gray-900">Passwort ändern</h2>
+        <form onSubmit={hsPw(d => passwordMutation.mutate(d))} className="space-y-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">Neues Passwort</label>
+            <input type="password" {...regPw("newPassword")} className={inp} />
+            {ePw.newPassword && <p className="mt-1 text-xs text-red-500">{ePw.newPassword.message}</p>}
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">Bestätigen</label>
+            <input type="password" {...regPw("confirm")} className={inp} />
+            {ePw.confirm && <p className="mt-1 text-xs text-red-500">{ePw.confirm.message}</p>}
+          </div>
+          <button type="submit" disabled={passwordMutation.isPending}
+            className="rounded-lg bg-[#4F772D] px-4 py-2 text-sm font-medium text-white hover:bg-[#31572C] disabled:opacity-60">
+            Passwort ändern
+          </button>
+        </form>
+      </div>
+    </div>
+  );
 
   const totalDays = leaveBalance ? (leaveBalance.entitlement_days + (leaveBalance.carry_over_days ?? 0)) : null;
   const remainingDays = totalDays !== null ? totalDays - (leaveBalance?.taken_days ?? 0) : null;

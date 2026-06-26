@@ -72,7 +72,7 @@ export default function PendingPage() {
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#4F772D]">
             <Leaf className="h-6 w-6 text-white" strokeWidth={1.5} />
           </div>
-          <p className="text-sm font-semibold text-gray-700">Sustainista HR</p>
+          <p className="text-sm font-semibold text-gray-700">HR Tool</p>
         </div>
 
         <div className="rounded-2xl border border-gray-200 bg-white p-10 shadow-sm">
@@ -92,7 +92,7 @@ export default function PendingPage() {
                 </div>
               )}
               <p className="mt-4 text-xs text-gray-400">
-                Wende dich bei Fragen an die HR-Abteilung: hr@sustainista.net
+                Wende dich bei Fragen an die HR-Abteilung deines Unternehmens.
               </p>
             </>
           ) : (

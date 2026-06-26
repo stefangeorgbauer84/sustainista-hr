@@ -86,7 +86,7 @@ function LoginForm() {
             <Leaf className="h-7 w-7 text-white" strokeWidth={1.5} />
           </div>
           <div className="text-center">
-            <h1 className="text-2xl font-semibold text-gray-900">Sustainista HR</h1>
+            <h1 className="text-2xl font-semibold text-gray-900">HR Tool</h1>
             <p className="mt-1 text-sm text-gray-500">Mitarbeiterverwaltung & Zeiterfassung</p>
           </div>
         </div>
@@ -146,7 +146,7 @@ function LoginForm() {
                 type="email"
                 autoComplete="email"
                 className="w-full rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm outline-none focus:border-[#4F772D] focus:ring-2 focus:ring-[#4F772D]/20"
-                placeholder="name@sustainista.net"
+                placeholder="name@beispiel.at"
               />
               {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email.message}</p>}
             </div>
@@ -189,7 +189,7 @@ function LoginForm() {
         </div>
 
         <p className="mt-6 text-center text-xs text-gray-400">
-          Sustainista GmbH · HR-System · DSGVO-konform
+          HR Tool · DSGVO-konform
         </p>
       </div>
     </div>

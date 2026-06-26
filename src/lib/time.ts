@@ -1,23 +1,32 @@
 import { supabase } from './supabase'
 import type { TimeRecord } from '@/types'
 
-async function getMyEmployeeId(): Promise<string> {
+async function getMyProfile(): Promise<{ employee_id: string; company_id: string }> {
   const { data: { user } } = await supabase.auth.getUser()
   const { data } = await supabase
     .from('profiles')
-    .select('employee_id')
+    .select('employee_id, company_id')
     .eq('id', user!.id)
     .single()
-  return data!.employee_id
+  if (!data?.employee_id) {
+    throw new Error('Kein Mitarbeiterprofil verknüpft. Zeiterfassung nur für Mitarbeiter verfügbar.')
+  }
+  return data as { employee_id: string; company_id: string }
+}
+
+async function getMyEmployeeId(): Promise<string> {
+  const { employee_id } = await getMyProfile()
+  return employee_id
 }
 
 export async function startTimer(note?: string): Promise<TimeRecord> {
-  const employeeId = await getMyEmployeeId()
+  const { employee_id, company_id } = await getMyProfile()
   const now = new Date()
   const { data, error } = await supabase
     .from('time_records')
     .insert({
-      employee_id: employeeId,
+      employee_id,
+      company_id,
       work_date: now.toISOString().split('T')[0],
       start_time: now.toTimeString().slice(0, 5),
       break_minutes: 0,
@@ -34,7 +43,7 @@ export async function stopTimer(recordId: string): Promise<TimeRecord> {
   const now = new Date()
   const { data, error } = await supabase
     .from('time_records')
-    .update({ end_time: now.toTimeString().slice(0, 5) })
+    .update({ end_time: now.toTimeString().slice(0, 5), status: 'submitted' })
     .eq('id', recordId)
     .select()
     .single()

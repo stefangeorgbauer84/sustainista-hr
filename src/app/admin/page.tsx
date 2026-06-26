@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { getAllPendingAbsences, getApprovedAbsencesForCalendar } from "@/lib/leave";
 import { supabase } from "@/lib/supabase";
-import type { Employee, Absence } from "@/types";
+import type { Employee, Absence, TimeRecord } from "@/types";
 import { Users, Clock, Calendar, AlertCircle } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
@@ -32,6 +32,21 @@ export default function AdminPage() {
     queryFn: getApprovedAbsencesForCalendar,
   });
 
+  const today = new Date().toISOString().split("T")[0];
+  const { data: activeTimers = [] } = useQuery<TimeRecord[]>({
+    queryKey: ["active-timers", today],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("time_records")
+        .select("id, employee_id")
+        .eq("work_date", today)
+        .is("end_time", null);
+      if (error) throw error;
+      return (data ?? []) as unknown as TimeRecord[];
+    },
+    refetchInterval: 60_000,
+  });
+
   return (
     <div className="space-y-6">
       <div>
@@ -43,7 +58,7 @@ export default function AdminPage() {
         <StatCard icon={<Users className="h-5 w-5" strokeWidth={1.5} />} label="Mitarbeiter" value={String(employees.length)} color="blue" />
         <StatCard icon={<AlertCircle className="h-5 w-5" strokeWidth={1.5} />} label="Offene Anträge" value={String(pending.length)} color="yellow" />
         <StatCard icon={<Calendar className="h-5 w-5" strokeWidth={1.5} />} label="Bald abwesend" value={String(upcoming.length)} color="green" />
-        <StatCard icon={<Clock className="h-5 w-5" strokeWidth={1.5} />} label="Heute aktiv" value="—" color="gray" />
+        <StatCard icon={<Clock className="h-5 w-5" strokeWidth={1.5} />} label="Heute aktiv" value={String(activeTimers.length)} color="gray" />
       </div>
 
       {pending.length > 0 && (

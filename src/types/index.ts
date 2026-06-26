@@ -3,6 +3,22 @@ import type { User, Session } from '@supabase/supabase-js'
 export type { User, Session }
 
 export type UserRole = 'super_admin' | 'company_admin' | 'hr_manager' | 'hr_staff' | 'manager' | 'payroll' | 'employee' | 'read_only'
+
+export interface Company {
+  id: string
+  name: string
+  slug: string
+  legal_name: string | null
+  brand_config: {
+    primaryColor?: string
+    icon?: string
+  }
+  settings: Record<string, unknown>
+  subscription_tier: string
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
 export type EmploymentType = 'vollzeit' | 'teilzeit' | 'geringfuegig' | 'lehrling' | 'freier_dienstnehmer' | 'praktikant' | 'werkvertrag'
 export type AbsenceCode = 'urlaub' | 'krankenstand' | 'pflegefreistellung' | 'sonderurlaub' | 'zeitausgleich' | 'dienstreise' | 'homeoffice' | 'bildungskarenz' | 'pflegekarenz' | 'mutterschutz' | 'elternteilzeit' | 'unbezahlt' | 'berufsschule' | 'praesenzdienst'
 
@@ -152,6 +168,60 @@ export interface Document {
   uploaded_by: string | null
   uploaded_at: string
   deleted_at: string | null
+}
+
+export interface Location {
+  id: string
+  company_id: string
+  name: string
+  address: { street?: string; zip?: string; city?: string }
+  federal_state: string
+  timezone: string
+  is_active: boolean
+  created_at: string
+}
+
+export interface EmployeeLocation {
+  id: string
+  company_id: string
+  employee_id: string
+  location_id: string
+  hours_per_week: number
+  is_primary: boolean
+  valid_from: string
+  valid_until: string | null
+  created_at: string
+}
+
+export interface ShiftSchedule {
+  id: string
+  company_id: string
+  employee_id: string
+  location_id: string
+  scheduled_date: string
+  start_time: string
+  end_time: string
+  break_minutes: number
+  status: 'draft' | 'published' | 'cancelled'
+  notes: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ScheduleChangeRequest {
+  id: string
+  company_id: string
+  shift_schedule_id: string
+  employee_id: string
+  requested_start: string
+  requested_end: string
+  break_minutes: number
+  reason: string
+  status: 'pending' | 'approved' | 'rejected'
+  admin_note: string | null
+  resolved_at: string | null
+  created_at: string
 }
 
 export interface WorkStats {

@@ -31,7 +31,7 @@ export default function TeamPulsePage() {
       const { data, error } = await supabase
         .from("employees")
         .select("*")
-        .eq("status", "active")
+        .eq("is_active", true)
         .limit(100);
       if (error) throw error;
       return data as unknown as Employee[];

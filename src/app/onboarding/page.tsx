@@ -158,7 +158,7 @@ export default function OnboardingPage() {
           <Leaf className="h-6 w-6 text-white" strokeWidth={1.5} />
         </div>
         <div className="text-center">
-          <h1 className="text-2xl font-semibold text-gray-900">Willkommen bei Sustainista</h1>
+          <h1 className="text-2xl font-semibold text-gray-900">Konto einrichten</h1>
           <p className="mt-1 text-sm text-gray-500">Bitte ergänze deine Informationen, damit wir dein Konto freischalten können.</p>
         </div>
       </div>

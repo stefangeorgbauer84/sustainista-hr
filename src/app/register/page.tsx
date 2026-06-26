@@ -128,7 +128,7 @@ export default function RegisterPage() {
           </div>
           <div className="text-center">
             <h1 className="text-2xl font-semibold text-gray-900">Konto erstellen</h1>
-            <p className="mt-1 text-sm text-gray-500">Sustainista HR — Mitarbeiterportal</p>
+            <p className="mt-1 text-sm text-gray-500">HR Tool — Mitarbeiterportal</p>
           </div>
         </div>
 
@@ -181,7 +181,7 @@ export default function RegisterPage() {
 
             <div>
               <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-gray-700">E-Mail</label>
-              <input {...register("email")} id="email" type="email" className={inp} placeholder="m.muster@sustainista.net" />
+              <input {...register("email")} id="email" type="email" className={inp} placeholder="m.muster@beispiel.at" />
               {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email.message}</p>}
             </div>
 

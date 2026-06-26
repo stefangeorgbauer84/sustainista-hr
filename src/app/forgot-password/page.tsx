@@ -77,7 +77,7 @@ export default function ForgotPasswordPage() {
                     id="email"
                     type="email"
                     className="w-full rounded-lg border border-gray-300 py-2.5 pl-9 pr-3.5 text-sm focus:border-[#4F772D] focus:outline-none focus:ring-2 focus:ring-[#4F772D]/20"
-                    placeholder="name@sustainista.net"
+                    placeholder="name@beispiel.at"
                   />
                 </div>
                 {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email.message}</p>}

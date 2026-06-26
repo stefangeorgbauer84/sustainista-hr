@@ -1,60 +1,60 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, ChevronRight, ChevronLeft, Sparkles } from "lucide-react";
+import { X, ChevronRight, ChevronLeft, Sparkles, Leaf, LayoutDashboard, Users, Calendar, Clock, FileText, FolderOpen, CheckCircle, type LucideIcon } from "lucide-react";
 
-const STEPS = [
+const STEPS: { title: string; description: string; Icon: LucideIcon }[] = [
   {
-    title: "Willkommen bei Sustainista HR",
+    title: "Willkommen beim HR Tool",
     description:
       "Dieses kurze Tutorial zeigt dir die wichtigsten Funktionen deines HR-Systems. Du kannst die Tour jederzeit beenden und später über den Button unten in der Sidebar neu starten.",
-    icon: "🌿",
+    Icon: Leaf,
   },
   {
     title: "Admin-Dashboard",
     description:
       "Die Übersicht zeigt dir auf einen Blick: Anzahl der Mitarbeiter, offene Urlaubsanträge, wer heute im Büro ist und wer bald abwesend sein wird.",
-    icon: "📊",
+    Icon: LayoutDashboard,
   },
   {
     title: "Mitarbeiterverwaltung",
     description:
       "Unter 'Mitarbeiter' findest du alle Personaldaten: Stammdaten, Dokumente, Abwesenheitshistorie und Zeitkonto. Klicke auf einen Mitarbeiter für die Detailansicht.",
-    icon: "👥",
+    Icon: Users,
   },
   {
     title: "Urlaubsanträge genehmigen",
     description:
       "Neue Urlaubsanträge erscheinen unter 'Urlaubsanträge'. Du kannst Anträge direkt genehmigen oder mit einer Begründung ablehnen. Abgelehnte Anträge werden dem Mitarbeiter mit deiner Notiz angezeigt.",
-    icon: "📅",
+    Icon: Calendar,
   },
   {
     title: "Zeiterfassung",
     description:
       "Die Zeiterfassung zeigt alle gestempelten Zeiten deiner Mitarbeiter. Korrekturen kannst du direkt vornehmen. Pausen werden separat erfasst und zum bestehenden Pausenwert addiert.",
-    icon: "⏱️",
+    Icon: Clock,
   },
   {
     title: "Reports & Kalender",
     description:
       "Im Reiter 'Reports' siehst du den Urlaubskalender aller Mitarbeiter farbkodiert nach Abwesenheitstyp. Du kannst Zeitberichte und Urlaubslisten als CSV exportieren.",
-    icon: "📋",
+    Icon: FileText,
   },
   {
     title: "Dokumente",
     description:
       "Lade Dokumente (Verträge, Lohnzettel, Zertifikate) für jeden Mitarbeiter hoch. Diese sind in der Mitarbeiter-Detailansicht abrufbar und können direkt heruntergeladen werden.",
-    icon: "📁",
+    Icon: FolderOpen,
   },
   {
     title: "Tour abgeschlossen!",
     description:
-      "Du kennst jetzt alle wichtigen Bereiche. Bei Fragen findest du rechts oben im Dashboard immer den aktuellen Status deines Teams. Viel Erfolg mit Sustainista HR!",
-    icon: "✅",
+      "Du kennst jetzt alle wichtigen Bereiche. Bei Fragen findest du rechts oben im Dashboard immer den aktuellen Status deines Teams. Viel Erfolg mit dem HR Tool!",
+    Icon: CheckCircle,
   },
 ];
 
-const STORAGE_KEY = "sustainista-hr-tour-done";
+const STORAGE_KEY = "hr-tool-tour-done";
 
 interface GuidedTourProps {
   forceOpen?: boolean;
@@ -118,7 +118,9 @@ export default function GuidedTour({ forceOpen, onClose }: GuidedTourProps) {
 
         <div className="p-6">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-3xl">{current.icon}</span>
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#4F772D]/10">
+              <current.Icon className="h-5 w-5 text-[#4F772D]" strokeWidth={1.5} />
+            </div>
             <span className="text-xs text-gray-400 font-medium">
               {step + 1} / {STEPS.length}
             </span>

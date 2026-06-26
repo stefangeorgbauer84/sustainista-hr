@@ -33,7 +33,7 @@ const TAG_SUGGESTIONS = ["Nachhaltigkeit", "Innovation", "Effizienz", "Kundenfok
 const inp = "w-full rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm focus:border-[#4F772D] focus:outline-none focus:ring-2 focus:ring-[#4F772D]/20";
 
 export default function WinsPage() {
-  const { employee } = useAuth();
+  const { employee, company } = useAuth();
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [content, setContent] = useState("");
@@ -61,6 +61,7 @@ export default function WinsPage() {
       if (!content.trim()) throw new Error("Pflichtfeld");
       const { error } = await supabase.from(PERF_COLLECTIONS.WINS).insert({
         employee_id: employee!.id,
+        company_id: company!.id,
         week_label: weekLabel,
         content: content.trim(),
         impact: impact || null,

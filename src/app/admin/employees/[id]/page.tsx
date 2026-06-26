@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
-import type { Employee, TimeRecord, Absence, Document, LeaveBalance } from "@/types";
+import type { Employee, TimeRecord, Absence, Document, LeaveBalance, EmployeeLocation, Location } from "@/types";
 import { calcWorkedMinutes, formatDuration } from "@/lib/time";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
@@ -10,7 +10,7 @@ import { use } from "react";
 import Link from "next/link";
 import {
   ArrowLeft, Clock, Calendar, FileText,
-  Mail, Phone, Building, CreditCard, Download,
+  Mail, Phone, Building, CreditCard, Download, MapPin,
 } from "lucide-react";
 
 const statusColors: Record<string, string> = {
@@ -67,6 +67,21 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
         .order("created_at", { ascending: false }).limit(20);
       if (error) throw error;
       return (data ?? []) as unknown as AbsenceWithType[];
+    },
+    enabled: !!id,
+  });
+
+  type EmpLocWithLocation = EmployeeLocation & { locations: Location | null };
+  const { data: empLocs = [] } = useQuery<EmpLocWithLocation[]>({
+    queryKey: ["emp-locations", id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("employee_locations")
+        .select("*, locations(*)")
+        .eq("employee_id", id)
+        .order("is_primary", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as unknown as EmpLocWithLocation[];
     },
     enabled: !!id,
   });
@@ -211,6 +226,38 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
           </div>
         </div>
       </div>
+
+      {empLocs.length > 0 && (
+        <div className="rounded-xl border border-gray-200 bg-white">
+          <div className="border-b border-gray-100 px-5 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-gray-400" strokeWidth={1.5} />
+              <h2 className="text-sm font-medium text-gray-900">Filialen ({empLocs.length})</h2>
+            </div>
+            <Link href="/admin/locations" className="text-xs text-[#4F772D] hover:underline">
+              Verwalten →
+            </Link>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {empLocs.map((el) => (
+              <div key={el.id} className="flex items-center justify-between px-5 py-3">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">{el.locations?.name ?? "—"}</p>
+                  <p className="text-xs text-gray-400">
+                    {el.locations?.address?.city}
+                    {el.is_primary && (
+                      <span className="ml-2 rounded-full bg-[#4F772D]/10 px-1.5 py-0.5 text-[10px] text-[#4F772D]">
+                        Hauptfiliale
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <p className="text-sm font-semibold text-gray-700">{el.hours_per_week}h/Woche</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="rounded-xl border border-gray-200 bg-white">
         <div className="border-b border-gray-100 px-5 py-4 flex items-center justify-between">

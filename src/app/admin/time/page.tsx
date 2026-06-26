@@ -55,7 +55,7 @@ export default function AdminTimePage() {
     mutationFn: async (id: string) => {
       const { error } = await supabase
         .from("time_records")
-        .update({ status: "approved", approvedBy: user?.id })
+        .update({ status: "approved", approved_by: user?.id })
         .eq("id", id);
       if (error) throw error;
     },
@@ -67,7 +67,7 @@ export default function AdminTimePage() {
     mutationFn: async (id: string) => {
       const { error } = await supabase
         .from("time_records")
-        .update({ status: "rejected", approvedBy: user?.id })
+        .update({ status: "rejected", approved_by: user?.id })
         .eq("id", id);
       if (error) throw error;
     },
@@ -100,7 +100,7 @@ export default function AdminTimePage() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {employees.map(emp => {
             const mins = totalMinutesByEmp[emp.id] ?? 0;
-            const targetMins = 160 * 60; // ~20 Arbeitstage × 8h
+            const targetMins = Math.round((emp.hours_per_week ?? 40) * 52 / 12) * 60;
             const overtime = mins - targetMins;
             return (
               <div key={emp.id} className="rounded-xl border border-gray-200 bg-white p-4">

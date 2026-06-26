@@ -62,7 +62,7 @@ export default function TimePage() {
   const startMutation = useMutation({
     mutationFn: () => startTimer(),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["running"] }); toast.success("Zeiterfassung gestartet"); },
-    onError: () => toast.error("Fehler beim Starten"),
+    onError: (err: Error) => toast.error(err.message || "Fehler beim Starten"),
   });
 
   const stopMutation = useMutation({
@@ -127,6 +127,7 @@ export default function TimePage() {
   const totalMinutes = entries
     .filter(e => e.status !== "draft" || e.end_time != null)
     .reduce((s, e) => s + calcWorkedMinutes(e), 0);
+  const monthlyTargetMinutes = Math.round((employee?.hours_per_week ?? 40) * 52 / 12) * 60;
 
   // AZG §11: 30 Min Pflichtpause nach 6h, 45 Min nach 9h
   function getPauseWarning(mins: number): string | null {
@@ -358,9 +359,9 @@ export default function TimePage() {
           <div className="border-t border-gray-100 bg-gray-50 px-5 py-3 flex items-center justify-between text-sm">
             <div className="flex gap-6 text-xs text-gray-500">
               <span>{entries.filter(e => e.end_time != null).length} Einträge</span>
-              {totalMinutes > 160 * 60 && (
+              {totalMinutes > monthlyTargetMinutes && (
                 <span className="text-amber-600 font-medium">
-                  +{formatDuration(totalMinutes - 160 * 60)} Überstunden
+                  +{formatDuration(totalMinutes - monthlyTargetMinutes)} Überstunden
                 </span>
               )}
             </div>

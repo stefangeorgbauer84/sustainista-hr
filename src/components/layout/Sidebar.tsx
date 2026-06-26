@@ -8,9 +8,10 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Clock, Calendar, FileText, Home, Users,
+  Clock, Calendar, CalendarDays, FileText, Home, Users,
   BarChart2, LogOut, Leaf, User, TrendingUp, UserCheck,
   Trophy, HeartPulse, Target, Lightbulb, ClipboardList, Globe,
+  Building2, LayoutGrid, MapPin,
 } from "lucide-react";
 import { TourStartButton } from "@/components/layout/GuidedTour";
 
@@ -29,6 +30,7 @@ const employeeNav: NavItem[] = [
   { href: "/dashboard/documents", label: "Meine Dokumente", icon: <FileText strokeWidth={1.5} className="h-4 w-4" /> },
   { href: "/dashboard/zeitkonto", label: "Zeitkonto", icon: <TrendingUp strokeWidth={1.5} className="h-4 w-4" /> },
   { href: "/dashboard/wins", label: "Meine Wins", icon: <Trophy strokeWidth={1.5} className="h-4 w-4" /> },
+  { href: "/dashboard/schedule", label: "Dienstplan", icon: <CalendarDays strokeWidth={1.5} className="h-4 w-4" /> },
   { href: "/dashboard/checkin", label: "Check-in", icon: <HeartPulse strokeWidth={1.5} className="h-4 w-4" /> },
   { href: "/dashboard/okrs", label: "Meine OKRs", icon: <Target strokeWidth={1.5} className="h-4 w-4" /> },
   { href: "/dashboard/kaizen", label: "Kaizen-Board", icon: <Lightbulb strokeWidth={1.5} className="h-4 w-4" /> },
@@ -37,7 +39,7 @@ const employeeNav: NavItem[] = [
   { href: "/dashboard/profile", label: "Mein Profil", icon: <User strokeWidth={1.5} className="h-4 w-4" /> },
 ];
 
-function buildAdminNav(pendingCount: number): NavItem[] {
+function buildAdminNav(pendingCount: number, changeRequestCount: number): NavItem[] {
   return [
     { href: "/admin/leadership", label: "Leadership", icon: <TrendingUp strokeWidth={1.5} className="h-4 w-4" /> },
     { href: "/admin", label: "Übersicht", icon: <Home strokeWidth={1.5} className="h-4 w-4" /> },
@@ -47,6 +49,7 @@ function buildAdminNav(pendingCount: number): NavItem[] {
       icon: <UserCheck strokeWidth={1.5} className="h-4 w-4" />,
       badge: pendingCount > 0 ? pendingCount : undefined,
     },
+    { href: "/admin/schedule", label: "Dienstplan", icon: <CalendarDays strokeWidth={1.5} className="h-4 w-4" />, badge: changeRequestCount > 0 ? changeRequestCount : undefined },
     { href: "/admin/time", label: "Zeiterfassung", icon: <Clock strokeWidth={1.5} className="h-4 w-4" /> },
     { href: "/admin/leave", label: "Urlaubsanträge", icon: <Calendar strokeWidth={1.5} className="h-4 w-4" /> },
     { href: "/admin/pulse", label: "Team-Puls", icon: <HeartPulse strokeWidth={1.5} className="h-4 w-4" /> },
@@ -54,13 +57,28 @@ function buildAdminNav(pendingCount: number): NavItem[] {
     { href: "/admin/kaizen", label: "Kaizen-Board", icon: <Lightbulb strokeWidth={1.5} className="h-4 w-4" /> },
     { href: "/admin/reports", label: "Reports", icon: <BarChart2 strokeWidth={1.5} className="h-4 w-4" /> },
     { href: "/admin/documents", label: "Dokumente", icon: <FileText strokeWidth={1.5} className="h-4 w-4" /> },
+    { href: "/admin/locations", label: "Filialen", icon: <MapPin strokeWidth={1.5} className="h-4 w-4" /> },
   ];
+}
+
+function getCompanyInitials(name: string): string {
+  return name.split(" ").filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
+}
+
+function CompanyIcon({ company }: { company: { name: string; brand_config?: { icon?: string } } | null }) {
+  const icon = company?.brand_config?.icon;
+  if (icon === "building") return <Building2 className="h-4 w-4 text-white" strokeWidth={1.5} />;
+  if (icon === "globe") return <Globe className="h-4 w-4 text-white" strokeWidth={1.5} />;
+  if (icon === "leaf") return <Leaf className="h-4 w-4 text-white" strokeWidth={1.5} />;
+  if (company) return <span className="text-[11px] font-bold text-white">{getCompanyInitials(company.name)}</span>;
+  return <Leaf className="h-4 w-4 text-white" strokeWidth={1.5} />;
 }
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, employee, isAdminUser } = useAuth();
+  const { user, employee, isAdminUser, isSuperAdmin, company } = useAuth();
+  const primaryColor = company?.brand_config?.primaryColor ?? "#4F772D";
 
   const { data: pendingCount = 0 } = useQuery({
     queryKey: ["pending-count"],
@@ -76,7 +94,20 @@ export default function Sidebar() {
     refetchInterval: 60_000,
   });
 
-  const nav = isAdminUser ? buildAdminNav(pendingCount) : employeeNav;
+  const { data: changeRequestCount = 0 } = useQuery({
+    queryKey: ["pending-change-requests-count"],
+    queryFn: async () => {
+      const { count } = await supabase
+        .from("schedule_change_requests")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending");
+      return count ?? 0;
+    },
+    enabled: isAdminUser,
+    refetchInterval: 60_000,
+  });
+
+  const nav = isAdminUser ? buildAdminNav(pendingCount, changeRequestCount) : employeeNav;
 
   async function handleLogout() {
     try {
@@ -90,16 +121,33 @@ export default function Sidebar() {
   return (
     <aside className="flex h-full w-60 flex-col border-r border-gray-200 bg-white">
       <div className="flex items-center gap-2.5 border-b border-gray-200 px-5 py-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#4F772D]">
-          <Leaf className="h-4 w-4 text-white" strokeWidth={1.5} />
+        <div
+          className="flex h-8 w-8 items-center justify-center rounded-lg flex-shrink-0"
+          style={{ backgroundColor: primaryColor }}
+        >
+          <CompanyIcon company={company} />
         </div>
-        <div>
-          <p className="text-sm font-semibold text-gray-900">Sustainista HR</p>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-gray-900 truncate">{company?.name ?? "HR Tool"}</p>
           <p className="text-[10px] text-gray-400">{isAdminUser ? "Administration" : "Mitarbeiter"}</p>
         </div>
       </div>
 
-      <nav className="flex-1 space-y-0.5 px-3 py-4">
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
+        {isSuperAdmin && (
+          <Link
+            href="/super-admin"
+            className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition mb-1 ${
+              pathname.startsWith("/super-admin")
+                ? "font-medium"
+                : "text-gray-500 hover:bg-gray-100"
+            }`}
+            style={pathname.startsWith("/super-admin") ? { backgroundColor: `${primaryColor}1A`, color: primaryColor } : {}}
+          >
+            <LayoutGrid strokeWidth={1.5} className="h-4 w-4" />
+            <span className="flex-1">Alle Unternehmen</span>
+          </Link>
+        )}
         {nav.map((item) => {
           const active = pathname === item.href;
           return (
@@ -107,10 +155,9 @@ export default function Sidebar() {
               key={item.href}
               href={item.href}
               className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition ${
-                active
-                  ? "bg-[#4F772D]/10 font-medium text-[#4F772D]"
-                  : "text-gray-600 hover:bg-gray-100"
+                active ? "font-medium" : "text-gray-600 hover:bg-gray-100"
               }`}
+              style={active ? { backgroundColor: `${primaryColor}1A`, color: primaryColor } : {}}
             >
               {item.icon}
               <span className="flex-1">{item.label}</span>
