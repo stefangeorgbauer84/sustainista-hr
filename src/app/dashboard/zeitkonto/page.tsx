@@ -8,6 +8,7 @@ import { calcWorkedMinutes, formatDuration } from "@/lib/time";
 import { isHoliday } from "@/lib/holidays";
 import { format, getDaysInMonth, isWeekend } from "date-fns";
 import { de } from "date-fns/locale";
+import { toast } from "sonner";
 import { TrendingUp, TrendingDown, Clock, Minus, Copy } from "lucide-react";
 import Link from "next/link";
 
