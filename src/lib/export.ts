@@ -1,13 +1,13 @@
-import type { Employee, TimeEntry, LeaveRequest } from "@/types";
-import { calcWorkedMinutes, formatDuration } from "./time";
+import type { Employee, TimeRecord, Absence } from "@/types";
+import { calcWorkedMinutes } from "./time";
 
 export function exportTimeEntriesCSV(
-  entries: TimeEntry[],
+  entries: TimeRecord[],
   employees: Employee[],
   month: number,
   year: number
 ): void {
-  const empMap = Object.fromEntries(employees.map(e => [e.$id, e]));
+  const empMap = Object.fromEntries(employees.map(e => [e.id, e]));
   const MONTHS = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
 
   const rows: string[][] = [
@@ -15,40 +15,39 @@ export function exportTimeEntriesCSV(
   ];
 
   entries
-    .filter(e => e.status !== "running")
-    .sort((a, b) => a.date.localeCompare(b.date))
+    .filter(e => e.end_time !== null)
+    .sort((a, b) => a.work_date.localeCompare(b.work_date))
     .forEach(entry => {
-      const emp = empMap[entry.employeeId];
-      const name = emp ? `${emp.lastName} ${emp.firstName}` : entry.employeeId;
+      const emp = empMap[entry.employee_id];
+      const name = emp ? `${emp.last_name} ${emp.first_name}` : entry.employee_id;
       const mins = calcWorkedMinutes(entry);
       const hours = (mins / 60).toFixed(2);
       rows.push([
         name,
-        entry.date,
-        entry.startTime,
-        entry.endTime ?? "",
-        String(entry.breakMinutes),
+        entry.work_date,
+        entry.start_time,
+        entry.end_time ?? "",
+        String(entry.break_minutes),
         hours,
         entry.status,
-        entry.note ?? "",
+        entry.notes ?? "",
       ]);
     });
 
-  // Überstunden-Zusammenfassung pro Mitarbeiter
   rows.push([], ["=== Zusammenfassung ==="], ["Mitarbeiter", "Gesamtstunden", "Soll (160h)", "Differenz"]);
   const byEmp: Record<string, number> = {};
-  entries.filter(e => e.status !== "running").forEach(e => {
-    byEmp[e.employeeId] = (byEmp[e.employeeId] ?? 0) + calcWorkedMinutes(e);
+  entries.filter(e => e.end_time !== null).forEach(e => {
+    byEmp[e.employee_id] = (byEmp[e.employee_id] ?? 0) + calcWorkedMinutes(e);
   });
   Object.entries(byEmp).forEach(([empId, mins]) => {
     const emp = empMap[empId];
-    const name = emp ? `${emp.lastName} ${emp.firstName}` : empId;
+    const name = emp ? `${emp.last_name} ${emp.first_name}` : empId;
     const diff = mins - 160 * 60;
     rows.push([name, (mins / 60).toFixed(2), "160.00", (diff / 60).toFixed(2)]);
   });
 
   const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" }); // BOM für Excel
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -57,21 +56,17 @@ export function exportTimeEntriesCSV(
   URL.revokeObjectURL(url);
 }
 
-export function exportLeaveCSV(leaves: LeaveRequest[], year: number): void {
-  const typeLabels: Record<string, string> = {
-    vacation: "Urlaub", sick: "Krankenstand", unpaid: "Unbezahlt", special: "Sonder",
-  };
-
+export function exportLeaveCSV(leaves: Absence[], year: number): void {
   const rows: string[][] = [
-    ["Mitarbeiter", "Typ", "Von", "Bis", "Werktage", "Status", "Genehmigt am", "Anmerkung"],
+    ["Mitarbeiter-ID", "Typ-ID", "Von", "Bis", "Werktage", "Status", "Genehmigt am", "Grund"],
     ...leaves.map(l => [
-      l.employeeName,
-      typeLabels[l.type] ?? l.type,
-      l.startDate,
-      l.endDate,
-      String(l.days),
+      l.employee_id,
+      l.absence_type_id,
+      l.start_date,
+      l.end_date,
+      String(l.working_days ?? ""),
       l.status,
-      l.approvedAt ? l.approvedAt.split("T")[0] : "",
+      l.approved_at ? l.approved_at.split("T")[0] : "",
       l.reason ?? "",
     ]),
   ];

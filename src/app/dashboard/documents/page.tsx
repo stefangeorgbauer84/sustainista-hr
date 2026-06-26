@@ -1,8 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { databases, DB_ID, COLLECTIONS, BUCKETS } from "@/lib/appwrite";
-import { Query } from "appwrite";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import type { Document } from "@/types";
 import { FileText, Download } from "lucide-react";
@@ -19,24 +18,30 @@ export default function DocumentsPage() {
   const { employee } = useAuth();
 
   const { data: docs = [], isLoading } = useQuery<Document[]>({
-    queryKey: ["my-docs", employee?.$id],
+    queryKey: ["my-docs", employee?.id],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, COLLECTIONS.DOCUMENTS, [
-        Query.equal("employeeId", employee!.$id),
-        Query.orderDesc("$createdAt"),
-        Query.limit(100),
-      ]);
-      return res.documents as unknown as Document[];
+      const { data, error } = await supabase
+        .from("documents")
+        .select("*")
+        .eq("employee_id", employee!.id)
+        .eq("visible_to_employee", true)
+        .eq("is_current_version", true)
+        .is("deleted_at", null)
+        .order("uploaded_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return data ?? [];
     },
     enabled: !!employee,
   });
 
-  function downloadUrl(fileId: string) {
-    return `https://cloud.appwrite.io/v1/storage/buckets/${BUCKETS.DOCUMENTS}/files/${fileId}/download?project=6a2567ad0021c84890d1`;
+  function downloadUrl(storagePath: string) {
+    const { data } = supabase.storage.from("documents").getPublicUrl(storagePath);
+    return data.publicUrl;
   }
 
-  const payslips = docs.filter(d => d.type === "payslip");
-  const others = docs.filter(d => d.type !== "payslip");
+  const payslips = docs.filter(d => d.category_id === "payslip" || d.tags?.includes("payslip"));
+  const others = docs.filter(d => d.category_id !== "payslip" && !d.tags?.includes("payslip"));
 
   return (
     <div className="space-y-6">
@@ -55,7 +60,7 @@ function DocSection({ title, docs, loading, downloadUrl }: {
   title: string;
   docs: Document[];
   loading: boolean;
-  downloadUrl: (id: string) => string;
+  downloadUrl: (storagePath: string) => string;
 }) {
   return (
     <div className="rounded-xl border border-gray-200 bg-white">
@@ -71,7 +76,7 @@ function DocSection({ title, docs, loading, downloadUrl }: {
           <p className="px-5 py-8 text-center text-sm text-gray-400">Noch keine Dokumente verfügbar</p>
         ) : (
           docs.map(doc => (
-            <div key={doc.$id} className="flex items-center justify-between px-5 py-3">
+            <div key={doc.id} className="flex items-center justify-between px-5 py-3">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-50">
                   <FileText className="h-4 w-4 text-red-400" strokeWidth={1.5} />
@@ -79,12 +84,12 @@ function DocSection({ title, docs, loading, downloadUrl }: {
                 <div>
                   <p className="text-sm font-medium text-gray-900">{doc.title}</p>
                   <p className="text-xs text-gray-400">
-                    {format(parseISO(doc.$createdAt), "d. MMMM yyyy", { locale: de })}
+                    {format(parseISO(doc.uploaded_at), "d. MMMM yyyy", { locale: de })}
                   </p>
                 </div>
               </div>
               <a
-                href={downloadUrl(doc.fileId)}
+                href={downloadUrl(doc.storage_path)}
                 target="_blank"
                 rel="noreferrer"
                 className="flex items-center gap-1.5 rounded-lg bg-[#4F772D]/10 px-3 py-1.5 text-xs font-medium text-[#4F772D] hover:bg-[#4F772D]/20 transition"

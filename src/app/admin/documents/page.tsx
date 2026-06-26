@@ -1,8 +1,7 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { databases, storage, DB_ID, COLLECTIONS, BUCKETS } from "@/lib/appwrite";
-import { Query, ID } from "appwrite";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
 import type { Employee, Document } from "@/types";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
@@ -29,19 +28,32 @@ export default function AdminDocumentsPage() {
   const { data: employees = [] } = useQuery<Employee[]>({
     queryKey: ["all-employees"],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, COLLECTIONS.EMPLOYEES, [Query.limit(100)]);
-      return res.documents as unknown as Employee[];
+      const { data, error } = await supabase
+        .from("employees")
+        .select("*")
+        .eq("is_active", true)
+        .order("last_name")
+        .limit(100);
+      if (error) throw error;
+      return data ?? [];
     },
   });
 
   const { data: docs = [], isLoading } = useQuery<Document[]>({
     queryKey: ["all-docs", selectedEmployee],
     queryFn: async () => {
-      const filters = selectedEmployee
-        ? [Query.equal("employeeId", selectedEmployee), Query.orderDesc("$createdAt"), Query.limit(100)]
-        : [Query.orderDesc("$createdAt"), Query.limit(100)];
-      const res = await databases.listDocuments(DB_ID, COLLECTIONS.DOCUMENTS, filters);
-      return res.documents as unknown as Document[];
+      let query = supabase
+        .from("documents")
+        .select("*")
+        .is("deleted_at", null)
+        .order("uploaded_at", { ascending: false })
+        .limit(100);
+      if (selectedEmployee) {
+        query = query.eq("employee_id", selectedEmployee);
+      }
+      const { data, error } = await query;
+      if (error) throw error;
+      return data ?? [];
     },
   });
 
@@ -53,19 +65,35 @@ export default function AdminDocumentsPage() {
     const file = fileRef.current.files[0];
     setUploading(true);
     try {
-      const uploaded = await storage.createFile(BUCKETS.DOCUMENTS, ID.unique(), file);
-      const emp = employees.find(e => e.$id === selectedEmployee);
+      const ext = file.name.split(".").pop();
+      const storagePath = `${selectedEmployee}/${Date.now()}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("documents")
+        .upload(storagePath, file);
+      if (uploadError) throw uploadError;
+
+      const emp = employees.find(e => e.id === selectedEmployee);
       const title = docType === "payslip"
         ? `Lohnzettel ${month}`
-        : `${typeLabels[docType]} — ${emp?.firstName} ${emp?.lastName}`;
-      await databases.createDocument(DB_ID, COLLECTIONS.DOCUMENTS, ID.unique(), {
-        employeeId: selectedEmployee,
-        type: docType,
+        : `${typeLabels[docType]} — ${emp?.first_name} ${emp?.last_name}`;
+
+      const { error: insertError } = await supabase.from("documents").insert({
+        employee_id: selectedEmployee,
         title,
-        fileId: uploaded.$id,
-        month: docType === "payslip" ? month : null,
-        uploadedBy: user!.$id,
+        storage_path: storagePath,
+        file_name: file.name,
+        file_size: file.size,
+        mime_type: file.type,
+        tags: [docType, ...(docType === "payslip" ? [month] : [])],
+        visible_to_employee: true,
+        uploaded_by: user!.id,
+        uploaded_at: new Date().toISOString(),
+        version: 1,
+        is_current_version: true,
       });
+      if (insertError) throw insertError;
+
       qc.invalidateQueries({ queryKey: ["all-docs"] });
       toast.success("Dokument hochgeladen");
       if (fileRef.current) fileRef.current.value = "";
@@ -78,8 +106,17 @@ export default function AdminDocumentsPage() {
 
   async function handleDelete(doc: Document) {
     try {
-      await storage.deleteFile(BUCKETS.DOCUMENTS, doc.fileId);
-      await databases.deleteDocument(DB_ID, COLLECTIONS.DOCUMENTS, doc.$id);
+      const { error: storageError } = await supabase.storage
+        .from("documents")
+        .remove([doc.storage_path]);
+      if (storageError) throw storageError;
+
+      const { error: dbError } = await supabase
+        .from("documents")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", doc.id);
+      if (dbError) throw dbError;
+
       qc.invalidateQueries({ queryKey: ["all-docs"] });
       toast.success("Gelöscht");
     } catch {
@@ -87,8 +124,9 @@ export default function AdminDocumentsPage() {
     }
   }
 
-  function downloadUrl(fileId: string) {
-    return `https://cloud.appwrite.io/v1/storage/buckets/${BUCKETS.DOCUMENTS}/files/${fileId}/download?project=6a2567ad0021c84890d1`;
+  function downloadUrl(storagePath: string) {
+    const { data } = supabase.storage.from("documents").getPublicUrl(storagePath);
+    return data.publicUrl;
   }
 
   return (
@@ -110,7 +148,7 @@ export default function AdminDocumentsPage() {
             >
               <option value="">Auswählen…</option>
               {employees.map(emp => (
-                <option key={emp.$id} value={emp.$id}>{emp.firstName} {emp.lastName}</option>
+                <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name}</option>
               ))}
             </select>
           </div>
@@ -164,7 +202,7 @@ export default function AdminDocumentsPage() {
           >
             <option value="">Alle Mitarbeiter</option>
             {employees.map(emp => (
-              <option key={emp.$id} value={emp.$id}>{emp.firstName} {emp.lastName}</option>
+              <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name}</option>
             ))}
           </select>
         </div>
@@ -175,9 +213,9 @@ export default function AdminDocumentsPage() {
             <p className="px-5 py-8 text-center text-sm text-gray-400">Noch keine Dokumente</p>
           ) : (
             docs.map(doc => {
-              const emp = employees.find(e => e.$id === doc.employeeId);
+              const emp = employees.find(e => e.id === doc.employee_id);
               return (
-                <div key={doc.$id} className="flex items-center justify-between px-5 py-3">
+                <div key={doc.id} className="flex items-center justify-between px-5 py-3">
                   <div className="flex items-center gap-3">
                     <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-red-500">
                       <FileText className="h-4 w-4" strokeWidth={1.5} />
@@ -185,14 +223,14 @@ export default function AdminDocumentsPage() {
                     <div>
                       <p className="text-sm font-medium text-gray-900">{doc.title}</p>
                       <p className="text-xs text-gray-400">
-                        {emp ? `${emp.firstName} ${emp.lastName}` : "—"} ·{" "}
-                        {format(parseISO(doc.$createdAt), "d. MMM yyyy", { locale: de })}
+                        {emp ? `${emp.first_name} ${emp.last_name}` : "—"} ·{" "}
+                        {format(parseISO(doc.uploaded_at), "d. MMM yyyy", { locale: de })}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <a
-                      href={downloadUrl(doc.fileId)}
+                      href={downloadUrl(doc.storage_path)}
                       target="_blank"
                       rel="noreferrer"
                       className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 transition"

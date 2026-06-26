@@ -3,10 +3,8 @@
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { databases, DB_ID } from "@/lib/appwrite";
-import { PERF_COLLECTIONS, currentQuarter } from "@/app/lib/collections";
-import { Query, ID } from "appwrite";
-import type { OKR } from "@/types";
+import { supabase } from "@/lib/supabase";
+import { currentQuarter } from "@/app/lib/collections";
 import { toast } from "sonner";
 import { Target, Plus, X, ChevronUp, ChevronDown, Edit2 } from "lucide-react";
 
@@ -21,6 +19,17 @@ const QUARTERS = Array.from({ length: 4 }, (_, i) => {
   return `${new Date().getFullYear()}-Q${q}`;
 });
 
+type OKRRow = {
+  id: string;
+  employee_id: string;
+  quarter: string;
+  objective: string;
+  key_results: string;
+  progress: number;
+  status: string;
+  created_at: string;
+};
+
 const inp = "w-full rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm focus:border-[#4F772D] focus:outline-none focus:ring-2 focus:ring-[#4F772D]/20";
 
 export default function OKRsPage() {
@@ -33,15 +42,17 @@ export default function OKRsPage() {
   const [quarter, setQuarter] = useState(currentQuarter());
   const [selectedQ, setSelectedQ] = useState(currentQuarter());
 
-  const { data: okrs = [], isLoading } = useQuery<OKR[]>({
-    queryKey: ["okrs", employee?.$id],
+  const { data: okrs = [], isLoading } = useQuery<OKRRow[]>({
+    queryKey: ["okrs", employee?.id],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, PERF_COLLECTIONS.OKRS, [
-        Query.equal("employeeId", employee!.$id),
-        Query.orderDesc("$createdAt"),
-        Query.limit(50),
-      ]);
-      return res.documents as unknown as OKR[];
+      const { data, error } = await supabase
+        .from("okrs")
+        .select("*")
+        .eq("employee_id", employee!.id)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      return (data ?? []) as OKRRow[];
     },
     enabled: !!employee,
   });
@@ -49,16 +60,23 @@ export default function OKRsPage() {
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!objective.trim() || !keyResults.trim()) throw new Error("Objective und Key Results erforderlich");
-      const data = {
-        employeeId: employee!.$id,
-        quarter,
-        objective: objective.trim(),
-        keyResults: keyResults.trim(),
-        progress: 0,
-        status: "on-track",
-      };
-      if (editingId) return databases.updateDocument(DB_ID, PERF_COLLECTIONS.OKRS, editingId, { objective: data.objective, keyResults: data.keyResults, quarter });
-      return databases.createDocument(DB_ID, PERF_COLLECTIONS.OKRS, ID.unique(), data);
+      if (editingId) {
+        const { error } = await supabase
+          .from("okrs")
+          .update({ objective: objective.trim(), key_results: keyResults.trim(), quarter })
+          .eq("id", editingId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("okrs").insert({
+          employee_id: employee!.id,
+          quarter,
+          objective: objective.trim(),
+          key_results: keyResults.trim(),
+          progress: 0,
+          status: "on-track",
+        });
+        if (error) throw error;
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["okrs"] });
@@ -69,15 +87,20 @@ export default function OKRsPage() {
   });
 
   const updateProgressMutation = useMutation({
-    mutationFn: ({ id, progress, status }: { id: string; progress: number; status?: string }) =>
-      databases.updateDocument(DB_ID, PERF_COLLECTIONS.OKRS, id, { progress, ...(status ? { status } : {}) }),
+    mutationFn: async ({ id, progress, status }: { id: string; progress: number; status?: string }) => {
+      const { error } = await supabase
+        .from("okrs")
+        .update({ progress, ...(status ? { status } : {}) })
+        .eq("id", id);
+      if (error) throw error;
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["okrs"] }),
   });
 
-  function openEdit(okr: OKR) {
-    setEditingId(okr.$id);
+  function openEdit(okr: OKRRow) {
+    setEditingId(okr.id);
     setObjective(okr.objective);
-    setKeyResults(okr.keyResults);
+    setKeyResults(okr.key_results);
     setQuarter(okr.quarter);
     setShowForm(true);
   }
@@ -107,7 +130,7 @@ export default function OKRsPage() {
         <p className="text-xs text-blue-600 leading-relaxed">
           <strong>Objective</strong> = das inspirierende Ziel (qualitativ, motivierend).<br />
           <strong>Key Results</strong> = wie du weißt, dass du es erreicht hast (messbar, 2–4 Punkte).<br />
-          Gut formuliert: "Wir wollen X, gemessen an Y." Quartalsweise. Ehrlich über Fortschritt.
+          Quartalsweise. Ehrlich über Fortschritt.
         </p>
       </div>
 
@@ -122,31 +145,20 @@ export default function OKRsPage() {
               </select>
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">Objective — das Ziel</label>
-              <input
-                value={objective}
-                onChange={e => setObjective(e.target.value)}
-                className={inp}
-                placeholder="z.B. Unsere Kunden lieben den Onboarding-Prozess"
-              />
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">Objective</label>
+              <input value={objective} onChange={e => setObjective(e.target.value)} className={inp}
+                placeholder="z.B. Unsere Kunden lieben den Onboarding-Prozess" />
             </div>
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">Key Results — wie du Erfolg misst</label>
-              <textarea
-                value={keyResults}
-                onChange={e => setKeyResults(e.target.value)}
-                rows={4}
-                placeholder={"KR1: Onboarding-Zeit von 5 Tagen auf 2 Tage reduzieren\nKR2: NPS-Score der Kunden nach Onboarding ≥ 8\nKR3: 3 neue Onboarding-Templates erstellt"}
-                className={`${inp} resize-none font-mono text-xs leading-relaxed`}
-              />
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">Key Results</label>
+              <textarea value={keyResults} onChange={e => setKeyResults(e.target.value)} rows={4}
+                placeholder={"KR1: Onboarding-Zeit von 5 Tagen auf 2 Tage reduzieren\nKR2: NPS ≥ 8\nKR3: 3 Templates erstellt"}
+                className={`${inp} resize-none font-mono text-xs leading-relaxed`} />
             </div>
             <div className="flex justify-end gap-2">
               <button onClick={() => setShowForm(false)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">Abbrechen</button>
-              <button
-                onClick={() => saveMutation.mutate()}
-                disabled={!objective.trim() || !keyResults.trim() || saveMutation.isPending}
-                className="rounded-lg bg-[#4F772D] px-4 py-2 text-sm font-medium text-white hover:bg-[#31572C] disabled:opacity-60"
-              >
+              <button onClick={() => saveMutation.mutate()} disabled={!objective.trim() || !keyResults.trim() || saveMutation.isPending}
+                className="rounded-lg bg-[#4F772D] px-4 py-2 text-sm font-medium text-white hover:bg-[#31572C] disabled:opacity-60">
                 {saveMutation.isPending ? "Speichert…" : "Speichern"}
               </button>
             </div>
@@ -154,16 +166,12 @@ export default function OKRsPage() {
         </div>
       )}
 
-      {/* Quarter tabs */}
       <div className="flex gap-1">
         {QUARTERS.map(q => (
-          <button
-            key={q}
-            onClick={() => setSelectedQ(q)}
+          <button key={q} onClick={() => setSelectedQ(q)}
             className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
               selectedQ === q ? "bg-[#4F772D] text-white" : "bg-white border border-gray-200 text-gray-500 hover:bg-gray-50"
-            }`}
-          >
+            }`}>
             {q}
           </button>
         ))}
@@ -179,7 +187,7 @@ export default function OKRsPage() {
       ) : (
         <div className="space-y-3">
           {filtered.map(okr => (
-            <div key={okr.$id} className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+            <div key={okr.id} className="rounded-xl border border-gray-200 bg-white overflow-hidden">
               <div className="px-5 py-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1">
@@ -190,7 +198,7 @@ export default function OKRsPage() {
                       </span>
                     </div>
                     <div className="mt-2 space-y-1">
-                      {okr.keyResults.split("\n").filter(Boolean).map((kr, i) => (
+                      {okr.key_results.split("\n").filter(Boolean).map((kr, i) => (
                         <p key={i} className="text-xs text-gray-500 flex gap-2">
                           <span className="text-[#4F772D] font-medium flex-shrink-0">KR{i + 1}</span>
                           {kr.replace(/^KR\d+:?\s*/i, "")}
@@ -203,46 +211,33 @@ export default function OKRsPage() {
                   </button>
                 </div>
 
-                {/* Progress */}
                 <div className="mt-4">
                   <div className="mb-1 flex justify-between text-xs text-gray-500">
                     <span>Fortschritt</span>
                     <span className="font-medium">{okr.progress ?? 0}%</span>
                   </div>
                   <div className="h-2 rounded-full bg-gray-100">
-                    <div
-                      className="h-2 rounded-full bg-[#4F772D] transition-all"
-                      style={{ width: `${okr.progress ?? 0}%` }}
-                    />
+                    <div className="h-2 rounded-full bg-[#4F772D] transition-all" style={{ width: `${okr.progress ?? 0}%` }} />
                   </div>
                   <div className="mt-2 flex items-center gap-2">
-                    <button
-                      onClick={() => updateProgressMutation.mutate({ id: okr.$id, progress: Math.max(0, (okr.progress ?? 0) - 10) })}
-                      className="rounded p-1 text-gray-400 hover:bg-gray-100"
-                    >
+                    <button onClick={() => updateProgressMutation.mutate({ id: okr.id, progress: Math.max(0, (okr.progress ?? 0) - 10) })}
+                      className="rounded p-1 text-gray-400 hover:bg-gray-100">
                       <ChevronDown className="h-4 w-4" strokeWidth={1.5} />
                     </button>
-                    <input
-                      type="range" min={0} max={100} step={5}
-                      value={okr.progress ?? 0}
-                      onChange={e => updateProgressMutation.mutate({ id: okr.$id, progress: parseInt(e.target.value) })}
-                      className="flex-1 accent-[#4F772D]"
-                    />
-                    <button
-                      onClick={() => updateProgressMutation.mutate({ id: okr.$id, progress: Math.min(100, (okr.progress ?? 0) + 10) })}
-                      className="rounded p-1 text-gray-400 hover:bg-gray-100"
-                    >
+                    <input type="range" min={0} max={100} step={5} value={okr.progress ?? 0}
+                      onChange={e => updateProgressMutation.mutate({ id: okr.id, progress: parseInt(e.target.value) })}
+                      className="flex-1 accent-[#4F772D]" />
+                    <button onClick={() => updateProgressMutation.mutate({ id: okr.id, progress: Math.min(100, (okr.progress ?? 0) + 10) })}
+                      className="rounded p-1 text-gray-400 hover:bg-gray-100">
                       <ChevronUp className="h-4 w-4" strokeWidth={1.5} />
                     </button>
                     <div className="flex gap-1 ml-2">
                       {STATUS_OPTS.map(s => (
-                        <button
-                          key={s.value}
-                          onClick={() => updateProgressMutation.mutate({ id: okr.$id, progress: okr.progress ?? 0, status: s.value })}
+                        <button key={s.value}
+                          onClick={() => updateProgressMutation.mutate({ id: okr.id, progress: okr.progress ?? 0, status: s.value })}
                           className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition ${
                             okr.status === s.value ? s.color : "bg-gray-100 text-gray-400 hover:bg-gray-200"
-                          }`}
-                        >
+                          }`}>
                           {s.label}
                         </button>
                       ))}

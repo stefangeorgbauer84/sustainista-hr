@@ -1,10 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { getApprovedLeaveForCalendar, getAllPendingRequests } from "@/lib/leave";
-import { databases, DB_ID, COLLECTIONS } from "@/lib/appwrite";
-import { Query } from "appwrite";
-import type { Employee, LeaveRequest, TimeEntry } from "@/types";
+import { getApprovedAbsencesForCalendar, getAllPendingAbsences } from "@/lib/leave";
+import { supabase } from "@/lib/supabase";
+import type { Employee, Absence, TimeRecord } from "@/types";
 import { exportTimeEntriesCSV, exportLeaveCSV } from "@/lib/export";
 import { calcWorkedMinutes, formatDuration } from "@/lib/time";
 import {
@@ -16,14 +15,28 @@ import { useState } from "react";
 import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 
 const typeColors: Record<string, string> = {
-  vacation: "bg-[#4F772D]/20 text-[#4F772D]",
-  sick: "bg-red-100 text-red-600",
-  unpaid: "bg-gray-200 text-gray-600",
-  special: "bg-purple-100 text-purple-600",
+  urlaub: "bg-[#4F772D]/20 text-[#4F772D]",
+  krankenstand: "bg-red-100 text-red-600",
+  zeitausgleich: "bg-blue-100 text-blue-600",
+  homeoffice: "bg-violet-100 text-violet-600",
+  sonderurlaub: "bg-purple-100 text-purple-600",
+  pflegefreistellung: "bg-orange-100 text-orange-600",
+  unbezahlt: "bg-gray-200 text-gray-600",
+  dienstreise: "bg-sky-100 text-sky-600",
 };
 
 const typeShort: Record<string, string> = {
-  vacation: "U", sick: "K", unpaid: "UB", special: "S",
+  urlaub: "U", krankenstand: "K", zeitausgleich: "ZA",
+  homeoffice: "HO", sonderurlaub: "S", pflegefreistellung: "PF",
+  unbezahlt: "UB", dienstreise: "DR",
+};
+
+type AbsenceWithCalendar = {
+  id: string;
+  employee_id: string;
+  start_date: string;
+  end_date: string;
+  absence_types: { name: string; code: string; color_hex: string } | null;
 };
 
 export default function ReportsPage() {
@@ -34,40 +47,48 @@ export default function ReportsPage() {
   const { data: employees = [] } = useQuery<Employee[]>({
     queryKey: ["all-employees"],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, COLLECTIONS.EMPLOYEES, [Query.limit(100)]);
-      return res.documents as unknown as Employee[];
+      const { data, error } = await supabase
+        .from("employees")
+        .select("*")
+        .limit(100);
+      if (error) throw error;
+      return data as unknown as Employee[];
     },
   });
 
-  const { data: leaves = [] } = useQuery<LeaveRequest[]>({
+  const { data: leaves = [] } = useQuery<AbsenceWithCalendar[]>({
     queryKey: ["approved-leaves"],
-    queryFn: getApprovedLeaveForCalendar,
+    queryFn: getApprovedAbsencesForCalendar as unknown as () => Promise<AbsenceWithCalendar[]>,
   });
 
-  const { data: allLeaves = [] } = useQuery<LeaveRequest[]>({
+  const { data: allLeaves = [] } = useQuery<Absence[]>({
     queryKey: ["all-leaves-year", year],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, COLLECTIONS.LEAVE_REQUESTS, [
-        Query.greaterThanEqual("startDate", `${year}-01-01`),
-        Query.lessThanEqual("endDate", `${year}-12-31`),
-        Query.limit(500),
-      ]);
-      return res.documents as unknown as LeaveRequest[];
+      const { data, error } = await supabase
+        .from("absences")
+        .select("*")
+        .gte("start_date", `${year}-01-01`)
+        .lte("end_date", `${year}-12-31`)
+        .limit(500);
+      if (error) throw error;
+      return data as unknown as Absence[];
     },
   });
 
   const start = `${year}-${String(month).padStart(2, "0")}-01`;
   const end = `${year}-${String(month).padStart(2, "0")}-31`;
 
-  const { data: timeEntries = [] } = useQuery<TimeEntry[]>({
+  const { data: timeEntries = [] } = useQuery<TimeRecord[]>({
     queryKey: ["all-time-entries-report", year, month],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, COLLECTIONS.TIME_ENTRIES, [
-        Query.greaterThanEqual("date", start),
-        Query.lessThanEqual("date", end),
-        Query.limit(500),
-      ]);
-      return res.documents as unknown as TimeEntry[];
+      const { data, error } = await supabase
+        .from("time_records")
+        .select("*")
+        .gte("work_date", start)
+        .lte("work_date", end)
+        .limit(500);
+      if (error) throw error;
+      return data as unknown as TimeRecord[];
     },
   });
 
@@ -75,17 +96,17 @@ export default function ReportsPage() {
   const isWeekend = (d: Date) => d.getDay() === 0 || d.getDay() === 6;
   const isToday = (d: Date) => format(d, "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd");
 
-  function leaveForDay(empId: string, day: Date) {
+  function leaveForDay(empId: string, day: Date): AbsenceWithCalendar | undefined {
     return leaves.find(l =>
-      l.employeeId === empId &&
-      isWithinInterval(day, { start: parseISO(l.startDate), end: parseISO(l.endDate) })
+      l.employee_id === empId &&
+      isWithinInterval(day, { start: parseISO(l.start_date), end: parseISO(l.end_date) })
     );
   }
 
   // Überstunden
   const overtimeByEmp: Record<string, number> = {};
-  timeEntries.filter(e => e.status !== "running").forEach(e => {
-    overtimeByEmp[e.employeeId] = (overtimeByEmp[e.employeeId] ?? 0) + calcWorkedMinutes(e);
+  timeEntries.filter(e => e.end_time !== null).forEach(e => {
+    overtimeByEmp[e.employee_id] = (overtimeByEmp[e.employee_id] ?? 0) + calcWorkedMinutes(e);
   });
 
   return (
@@ -131,15 +152,16 @@ export default function ReportsPage() {
       {/* Überstunden-Karten */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {employees.map(emp => {
-          const mins = overtimeByEmp[emp.$id] ?? 0;
-          const overtime = mins - 160 * 60;
+          const mins = overtimeByEmp[emp.id] ?? 0;
+          const target = Math.round((emp.hours_per_week ?? 40) * 52 / 12) * 60;
+          const overtime = mins - target;
           return (
-            <div key={emp.$id} className="rounded-xl border border-gray-200 bg-white p-4">
+            <div key={emp.id} className="rounded-xl border border-gray-200 bg-white p-4">
               <div className="flex items-center gap-2 mb-2">
                 <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#4F772D]/10 text-xs font-bold text-[#4F772D]">
-                  {emp.firstName[0]}{emp.lastName[0]}
+                  {emp.first_name[0]}{emp.last_name[0]}
                 </div>
-                <p className="text-sm font-medium text-gray-900">{emp.firstName} {emp.lastName}</p>
+                <p className="text-sm font-medium text-gray-900">{emp.first_name} {emp.last_name}</p>
               </div>
               <div className="flex items-center justify-between text-xs">
                 <span className="text-gray-500">Ist: <strong>{formatDuration(mins)}</strong></span>
@@ -176,29 +198,29 @@ export default function ReportsPage() {
           </thead>
           <tbody className="divide-y divide-gray-50">
             {employees.map(emp => (
-              <tr key={emp.$id} className="hover:bg-gray-50/50">
+              <tr key={emp.id} className="hover:bg-gray-50/50">
                 <td className="sticky left-0 bg-white px-4 py-2 z-10 border-r border-gray-100">
                   <div className="flex items-center gap-2">
                     <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#4F772D]/10 text-[9px] font-bold text-[#4F772D]">
-                      {emp.firstName[0]}{emp.lastName[0]}
+                      {emp.first_name[0]}{emp.last_name[0]}
                     </div>
                     <span className="font-medium text-gray-900 whitespace-nowrap">
-                      {emp.firstName} {emp.lastName[0]}.
+                      {emp.first_name} {emp.last_name[0]}.
                     </span>
                   </div>
                 </td>
                 {days.map(day => {
-                  const leave = leaveForDay(emp.$id, day);
+                  const leave = leaveForDay(emp.id, day);
                   const weekend = isWeekend(day);
                   return (
                     <td key={day.toISOString()}
                       className={`px-0.5 py-1.5 text-center ${weekend ? "bg-gray-50/50" : isToday(day) ? "bg-[#4F772D]/5" : ""}`}>
                       {leave && !weekend && (
                         <div
-                          title={leave.type}
-                          className={`mx-auto flex h-5 w-5 items-center justify-center rounded text-[8px] font-bold ${typeColors[leave.type]}`}
+                          title={leave.absence_types?.name ?? leave.absence_types?.code ?? ""}
+                          className={`mx-auto flex h-5 w-5 items-center justify-center rounded text-[8px] font-bold ${typeColors[leave.absence_types?.code ?? ""] ?? "bg-gray-100 text-gray-500"}`}
                         >
-                          {typeShort[leave.type]}
+                          {typeShort[leave.absence_types?.code ?? ""] ?? "?"}
                         </div>
                       )}
                     </td>
@@ -209,7 +231,7 @@ export default function ReportsPage() {
           </tbody>
         </table>
         <div className="border-t border-gray-100 px-4 py-3 flex items-center gap-4">
-          {[["vacation","Urlaub"],["sick","Krankenstand"],["unpaid","Unbezahlt"],["special","Sonder"]].map(([k,l]) => (
+          {[["urlaub","Urlaub"],["krankenstand","Krankenstand"],["zeitausgleich","Zeitausgleich"],["homeoffice","Homeoffice"],["unbezahlt","Unbezahlt"],["dienstreise","Dienstreise"]].map(([k,l]) => (
             <div key={k} className="flex items-center gap-1.5">
               <div className={`flex h-4 w-4 items-center justify-center rounded text-[8px] font-bold ${typeColors[k]}`}>{typeShort[k]}</div>
               <span className="text-xs text-gray-500">{l}</span>

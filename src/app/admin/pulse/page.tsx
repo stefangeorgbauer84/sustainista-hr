@@ -1,10 +1,13 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { databases, DB_ID, COLLECTIONS } from "@/lib/appwrite";
-import { PERF_COLLECTIONS } from "@/app/lib/collections";
-import { Query } from "appwrite";
-import type { Employee, CheckIn } from "@/types";
+import { supabase } from "@/lib/supabase";
+import type { Employee } from "@/types";
+
+type CheckIn = {
+  id: string; employee_id: string; week_label: string; energy_level: number;
+  priority: string; blocker: string | null; satisfaction: number | null; created_at: string;
+};
 import { HeartPulse, AlertTriangle, TrendingUp } from "lucide-react";
 
 const ENERGY_EMOJIS = ["", "😔", "😐", "🙂", "😊", "🌟"];
@@ -25,33 +28,38 @@ export default function TeamPulsePage() {
   const { data: employees = [] } = useQuery<Employee[]>({
     queryKey: ["all-employees"],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, COLLECTIONS.EMPLOYEES, [
-        Query.equal("status", "active"), Query.limit(100),
-      ]);
-      return res.documents as unknown as Employee[];
+      const { data, error } = await supabase
+        .from("employees")
+        .select("*")
+        .eq("status", "active")
+        .limit(100);
+      if (error) throw error;
+      return data as unknown as Employee[];
     },
   });
 
   const { data: checkins = [], isLoading } = useQuery<CheckIn[]>({
     queryKey: ["all-checkins"],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, PERF_COLLECTIONS.CHECK_INS, [
-        Query.orderDesc("$createdAt"),
-        Query.limit(500),
-      ]);
-      return res.documents as unknown as CheckIn[];
+      const { data, error } = await supabase
+        .from("check_ins")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (error) throw error;
+      return data as unknown as CheckIn[];
     },
   });
 
-  const empMap = Object.fromEntries(employees.map(e => [e.$id, e]));
+  const empMap = Object.fromEntries(employees.map(e => [e.id, e]));
 
   const thisWeek = WEEKS[WEEKS.length - 1];
-  const thisWeekCheckins = checkins.filter(c => c.weekLabel === thisWeek);
-  const missing = employees.filter(e => !thisWeekCheckins.find(c => c.employeeId === e.$id));
+  const thisWeekCheckins = checkins.filter(c => c.week_label === thisWeek);
+  const missing = employees.filter(e => !thisWeekCheckins.find(c => c.employee_id === e.id));
 
   const avgByWeek = WEEKS.map(w => {
-    const wc = checkins.filter(c => c.weekLabel === w);
-    const avg = wc.length > 0 ? wc.reduce((s, c) => s + c.energyLevel, 0) / wc.length : null;
+    const wc = checkins.filter(c => c.week_label === w);
+    const avg = wc.length > 0 ? wc.reduce((s, c) => s + c.energy_level, 0) / wc.length : null;
     return { week: w, avg, count: wc.length, blockers: wc.filter(c => c.blocker?.trim()).length };
   });
 
@@ -102,19 +110,19 @@ export default function TeamPulsePage() {
             ) : (
               <div className="space-y-2">
                 {thisWeekCheckins.map(ci => {
-                  const emp = empMap[ci.employeeId];
+                  const emp = empMap[ci.employee_id];
                   return (
-                    <div key={ci.$id} className="flex items-start gap-3 rounded-lg bg-gray-50 px-3 py-2.5">
-                      <div className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-sm ${ENERGY_COLORS[ci.energyLevel]}`}>
-                        {ENERGY_EMOJIS[ci.energyLevel]}
+                    <div key={ci.id} className="flex items-start gap-3 rounded-lg bg-gray-50 px-3 py-2.5">
+                      <div className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-sm ${ENERGY_COLORS[ci.energy_level]}`}>
+                        {ENERGY_EMOJIS[ci.energy_level]}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-xs font-medium text-gray-700 truncate">
-                            {emp ? `${emp.firstName} ${emp.lastName}` : "Unbekannt"}
+                            {emp ? `${emp.first_name} ${emp.last_name}` : "Unbekannt"}
                           </p>
-                          <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] ${ENERGY_COLORS[ci.energyLevel]}`}>
-                            {ENERGY_LABELS[ci.energyLevel]}
+                          <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] ${ENERGY_COLORS[ci.energy_level]}`}>
+                            {ENERGY_LABELS[ci.energy_level]}
                           </span>
                         </div>
                         <p className="text-xs text-gray-500 truncate mt-0.5">{ci.priority}</p>
@@ -140,11 +148,11 @@ export default function TeamPulsePage() {
               <h2 className="mb-3 text-sm font-semibold text-gray-700">Noch kein Check-in ({missing.length})</h2>
               <div className="space-y-1.5">
                 {missing.map(e => (
-                  <div key={e.$id} className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 border border-gray-100">
+                  <div key={e.id} className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 border border-gray-100">
                     <div className="h-6 w-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-medium text-gray-500">
-                      {e.firstName[0]}{e.lastName[0]}
+                      {e.first_name[0]}{e.last_name[0]}
                     </div>
-                    <span className="text-xs text-gray-600">{e.firstName} {e.lastName}</span>
+                    <span className="text-xs text-gray-600">{e.first_name} {e.last_name}</span>
                   </div>
                 ))}
               </div>
@@ -160,10 +168,10 @@ export default function TeamPulsePage() {
               </div>
               <div className="space-y-2">
                 {allBlockers.map(ci => {
-                  const emp = empMap[ci.employeeId];
+                  const emp = empMap[ci.employee_id];
                   return (
-                    <div key={ci.$id} className="rounded-lg bg-white px-3 py-2 border border-amber-100">
-                      <p className="text-xs font-medium text-gray-700">{emp ? `${emp.firstName} ${emp.lastName}` : "—"}</p>
+                    <div key={ci.id} className="rounded-lg bg-white px-3 py-2 border border-amber-100">
+                      <p className="text-xs font-medium text-gray-700">{emp ? `${emp.first_name} ${emp.last_name}` : "—"}</p>
                       <p className="text-xs text-amber-700 mt-0.5">{ci.blocker}</p>
                     </div>
                   );

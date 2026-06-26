@@ -1,85 +1,138 @@
-import { databases, DB_ID, COLLECTIONS } from "./appwrite";
-import { ID, Query } from "appwrite";
-import type { LeaveRequest } from "@/types";
-import { differenceInBusinessDays, parseISO, addDays } from "date-fns";
+import { supabase } from './supabase'
+import type { Absence, AbsenceType, LeaveBalance } from '@/types'
+import { addDays, parseISO } from 'date-fns'
 
-// Austrian public holidays 2025/2026 (§ 7 ARG)
-const AT_HOLIDAYS = [
-  "2025-01-01", "2025-01-06", "2025-04-21", "2025-05-01",
-  "2025-05-29", "2025-06-09", "2025-06-19", "2025-08-15",
-  "2025-10-26", "2025-11-01", "2025-12-08", "2025-12-25", "2025-12-26",
-  "2026-01-01", "2026-01-06", "2026-04-06", "2026-05-01",
-  "2026-05-14", "2026-05-25", "2026-06-04", "2026-08-15",
-  "2026-10-26", "2026-11-01", "2026-12-08", "2026-12-25", "2026-12-26",
-];
-
-export function calcBusinessDays(start: string, end: string): number {
-  let count = 0;
-  let current = parseISO(start);
-  const endDate = parseISO(end);
+export function calcBusinessDays(start: string, end: string, holidays: string[]): number {
+  let count = 0
+  let current = parseISO(start)
+  const endDate = parseISO(end)
   while (current <= endDate) {
-    const iso = current.toISOString().split("T")[0];
-    const dow = current.getDay();
-    if (dow !== 0 && dow !== 6 && !AT_HOLIDAYS.includes(iso)) count++;
-    current = addDays(current, 1);
+    const iso = current.toISOString().split('T')[0]
+    const dow = current.getDay()
+    if (dow !== 0 && dow !== 6 && !holidays.includes(iso)) count++
+    current = addDays(current, 1)
   }
-  return count;
+  return count
 }
 
-export async function createLeaveRequest(
-  employeeId: string,
-  employeeName: string,
-  data: Omit<LeaveRequest, "$id" | "$createdAt" | "$updatedAt" | "status" | "days" | "employeeId" | "employeeName">
-): Promise<LeaveRequest> {
-  const days = calcBusinessDays(data.startDate, data.endDate);
-  return databases.createDocument(DB_ID, COLLECTIONS.LEAVE_REQUESTS, ID.unique(), {
-    employeeId,
-    employeeName,
-    ...data,
-    days,
-    status: "pending",
-  }) as unknown as LeaveRequest;
+export async function getHolidaysForYear(year: number): Promise<string[]> {
+  const { data } = await supabase
+    .from('public_holidays')
+    .select('holiday_date')
+    .eq('country', 'AT')
+    .is('federal_state', null)
+    .eq('year', year)
+  return (data ?? []).map((h) => h.holiday_date)
 }
 
-export async function getLeaveRequestsForEmployee(employeeId: string): Promise<LeaveRequest[]> {
-  const res = await databases.listDocuments(DB_ID, COLLECTIONS.LEAVE_REQUESTS, [
-    Query.equal("employeeId", employeeId),
-    Query.orderDesc("$createdAt"),
-    Query.limit(50),
-  ]);
-  return res.documents as unknown as LeaveRequest[];
+export async function getAbsenceTypes(): Promise<AbsenceType[]> {
+  const { data, error } = await supabase
+    .from('absence_types')
+    .select('*')
+    .eq('is_active', true)
+    .order('name')
+  if (error) throw error
+  return data ?? []
 }
 
-export async function getAllPendingRequests(): Promise<LeaveRequest[]> {
-  const res = await databases.listDocuments(DB_ID, COLLECTIONS.LEAVE_REQUESTS, [
-    Query.equal("status", "pending"),
-    Query.orderAsc("startDate"),
-    Query.limit(100),
-  ]);
-  return res.documents as unknown as LeaveRequest[];
+export async function createAbsence(payload: {
+  absence_type_id: string
+  start_date: string
+  end_date: string
+  reason?: string
+  deputy_id?: string
+  working_days: number
+}): Promise<Absence> {
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('employee_id, company_id')
+    .eq('id', user!.id)
+    .single()
+
+  const { data, error } = await supabase
+    .from('absences')
+    .insert({
+      ...payload,
+      employee_id: profile!.employee_id,
+      company_id: profile!.company_id,
+      requested_by: user!.id,
+      status: 'requested',
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return data
 }
 
-export async function approveLeave(requestId: string, adminId: string): Promise<LeaveRequest> {
-  return databases.updateDocument(DB_ID, COLLECTIONS.LEAVE_REQUESTS, requestId, {
-    status: "approved",
-    approvedBy: adminId,
-    approvedAt: new Date().toISOString(),
-  }) as unknown as LeaveRequest;
+export async function getAbsencesForEmployee(employeeId: string): Promise<Absence[]> {
+  const { data, error } = await supabase
+    .from('absences')
+    .select('*')
+    .eq('employee_id', employeeId)
+    .order('start_date', { ascending: false })
+    .limit(50)
+  if (error) throw error
+  return data ?? []
 }
 
-export async function rejectLeave(requestId: string, adminId: string): Promise<LeaveRequest> {
-  return databases.updateDocument(DB_ID, COLLECTIONS.LEAVE_REQUESTS, requestId, {
-    status: "rejected",
-    approvedBy: adminId,
-    approvedAt: new Date().toISOString(),
-  }) as unknown as LeaveRequest;
+export async function getAllPendingAbsences(): Promise<Absence[]> {
+  const { data, error } = await supabase
+    .from('absences')
+    .select('*, employees!employee_id(first_name, last_name), absence_types(name, color_hex)')
+    .eq('status', 'requested')
+    .order('start_date')
+    .limit(100)
+  if (error) throw error
+  return data ?? []
 }
 
-export async function getApprovedLeaveForCalendar(): Promise<LeaveRequest[]> {
-  const res = await databases.listDocuments(DB_ID, COLLECTIONS.LEAVE_REQUESTS, [
-    Query.equal("status", "approved"),
-    Query.orderAsc("startDate"),
-    Query.limit(200),
-  ]);
-  return res.documents as unknown as LeaveRequest[];
+export async function approveAbsence(id: string): Promise<Absence> {
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data, error } = await supabase
+    .from('absences')
+    .update({ status: 'approved', approved_by: user!.id, approved_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function rejectAbsence(id: string, rejection_note?: string): Promise<Absence> {
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data, error } = await supabase
+    .from('absences')
+    .update({
+      status: 'rejected',
+      approved_by: user!.id,
+      approved_at: new Date().toISOString(),
+      ...(rejection_note ? { rejection_note } : {}),
+    })
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function getLeaveBalance(employeeId: string, year: number): Promise<LeaveBalance | null> {
+  const { data } = await supabase
+    .from('leave_balances')
+    .select('*')
+    .eq('employee_id', employeeId)
+    .eq('year', year)
+    .single()
+  return data ?? null
+}
+
+export async function getApprovedAbsencesForCalendar(): Promise<Absence[]> {
+  const { data, error } = await supabase
+    .from('absences')
+    .select('*, employees!employee_id(first_name, last_name), absence_types(name, code, color_hex)')
+    .eq('status', 'approved')
+    .order('start_date')
+    .limit(200)
+  if (error) throw error
+  return data ?? []
 }

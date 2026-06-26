@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { account, databases, DB_ID, COLLECTIONS } from "@/lib/appwrite";
-import { Query } from "appwrite";
+import { supabase } from "@/lib/supabase";
 import type { Employee } from "@/types";
 import { logout } from "@/lib/auth";
 import { Leaf, Clock, CheckCircle, XCircle, LogOut } from "lucide-react";
@@ -16,13 +15,25 @@ export default function PendingPage() {
   useEffect(() => {
     async function load() {
       try {
-        const user = await account.get();
-        const res = await databases.listDocuments(DB_ID, COLLECTIONS.EMPLOYEES, [
-          Query.equal("userId", user.$id), Query.limit(1),
-        ]);
-        const emp = res.documents[0] as unknown as Employee;
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { router.replace("/login"); return; }
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("employee_id")
+          .eq("id", user.id)
+          .single();
+
+        if (!profile?.employee_id) { router.replace("/login"); return; }
+
+        const { data: emp } = await supabase
+          .from("employees")
+          .select("*")
+          .eq("id", profile.employee_id)
+          .single() as { data: Employee | null };
+
         if (!emp) { router.replace("/login"); return; }
-        if (emp.status === "active") { router.replace("/dashboard"); return; }
+        if (emp.is_active) { router.replace("/dashboard"); return; }
         setEmployee(emp);
       } catch {
         router.replace("/login");
@@ -49,7 +60,9 @@ export default function PendingPage() {
     );
   }
 
-  const isRejected = employee?.status === "rejected";
+  const empStatus = (employee?.custom_fields as Record<string, unknown>)?.status as string | undefined;
+  const isRejected = empStatus === "rejected";
+  const rejectionReason = (employee?.custom_fields as Record<string, unknown>)?.rejection_reason as string | undefined;
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4">
@@ -72,10 +85,10 @@ export default function PendingPage() {
               <p className="mt-3 text-sm text-gray-500">
                 Dein Onboarding-Antrag wurde leider nicht genehmigt.
               </p>
-              {employee?.rejectionReason && (
+              {rejectionReason && (
                 <div className="mt-4 rounded-lg border border-red-100 bg-red-50 p-4 text-sm text-red-700 text-left">
                   <p className="font-medium mb-1">Begründung:</p>
-                  <p>{employee.rejectionReason}</p>
+                  <p>{rejectionReason}</p>
                 </div>
               )}
               <p className="mt-4 text-xs text-gray-400">
@@ -89,8 +102,8 @@ export default function PendingPage() {
               </div>
               <h1 className="text-xl font-semibold text-gray-900">Konto wird geprüft</h1>
               <p className="mt-3 text-sm text-gray-500">
-                Deine Daten wurden erfolgreich übermittelt. Die HR-Abteilung prüft deinen Antrag.
-                Du wirst automatisch weitergeleitet, sobald dein Konto freigeschaltet wurde.
+                Dein Account wird gerade überprüft. Ein Admin wird dich in Kürze freischalten.
+                Du wirst automatisch weitergeleitet, sobald dein Konto aktiviert wurde.
               </p>
               <div className="mt-6 flex items-center justify-center gap-2 text-xs text-[#4F772D]">
                 <div className="h-2 w-2 animate-pulse rounded-full bg-[#4F772D]" />
@@ -100,9 +113,9 @@ export default function PendingPage() {
               <div className="mt-6 rounded-lg bg-gray-50 p-4 text-left">
                 <p className="mb-2 text-xs font-medium text-gray-500">Eingereichte Daten</p>
                 <div className="space-y-1 text-sm text-gray-700">
-                  <p><span className="text-gray-400">Name:</span> {employee?.firstName} {employee?.lastName}</p>
-                  <p><span className="text-gray-400">E-Mail:</span> {employee?.email}</p>
-                  {employee?.phone && <p><span className="text-gray-400">Telefon:</span> {employee.phone}</p>}
+                  <p><span className="text-gray-400">Name:</span> {employee?.first_name} {employee?.last_name}</p>
+                  <p><span className="text-gray-400">E-Mail:</span> {employee?.contact_email}</p>
+                  {employee?.contact_phone && <p><span className="text-gray-400">Telefon:</span> {employee.contact_phone}</p>}
                 </div>
               </div>
             </>

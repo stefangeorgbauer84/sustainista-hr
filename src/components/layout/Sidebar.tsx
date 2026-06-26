@@ -4,8 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { logout } from "@/lib/auth";
-import { databases, DB_ID, COLLECTIONS } from "@/lib/appwrite";
-import { Query } from "appwrite";
+import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -13,6 +12,7 @@ import {
   BarChart2, LogOut, Leaf, User, TrendingUp, UserCheck,
   Trophy, HeartPulse, Target, Lightbulb, ClipboardList, Globe,
 } from "lucide-react";
+import { TourStartButton } from "@/components/layout/GuidedTour";
 
 interface NavItem {
   href: string;
@@ -65,10 +65,12 @@ export default function Sidebar() {
   const { data: pendingCount = 0 } = useQuery({
     queryKey: ["pending-count"],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, COLLECTIONS.EMPLOYEES, [
-        Query.equal("status", "pending"), Query.limit(1),
-      ]);
-      return res.total;
+      const { count } = await supabase
+        .from("employees")
+        .select("id", { count: "exact", head: true })
+        .eq("is_active", false)
+        .filter("custom_fields->>status", "eq", "pending");
+      return count ?? 0;
     },
     enabled: isAdminUser,
     refetchInterval: 60_000,
@@ -125,10 +127,11 @@ export default function Sidebar() {
       <div className="border-t border-gray-200 px-3 py-3">
         <div className="mb-2 rounded-lg px-3 py-2">
           <p className="text-xs font-medium text-gray-900 truncate">
-            {employee ? `${employee.firstName} ${employee.lastName}` : user?.name ?? "—"}
+            {employee ? `${employee.first_name} ${employee.last_name}` : user?.email ?? "—"}
           </p>
           <p className="text-[10px] text-gray-400 truncate">{user?.email}</p>
         </div>
+        <TourStartButton />
         <button
           onClick={handleLogout}
           className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-gray-500 transition hover:bg-red-50 hover:text-red-600"

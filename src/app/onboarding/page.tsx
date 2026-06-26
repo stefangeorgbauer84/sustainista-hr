@@ -5,8 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { account, databases, DB_ID, COLLECTIONS } from "@/lib/appwrite";
-import { Query } from "appwrite";
+import { supabase } from "@/lib/supabase";
 import type { Employee } from "@/types";
 import { toast } from "sonner";
 import { Leaf, Check, ChevronRight, User, Phone, CreditCard, ClipboardCheck } from "lucide-react";
@@ -64,21 +63,37 @@ export default function OnboardingPage() {
   useEffect(() => {
     async function load() {
       try {
-        const user = await account.get();
-        const res = await databases.listDocuments(DB_ID, COLLECTIONS.EMPLOYEES, [
-          Query.equal("userId", user.$id), Query.limit(1),
-        ]);
-        const emp = res.documents[0] as unknown as Employee;
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { router.replace("/login"); return; }
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("employee_id")
+          .eq("id", user.id)
+          .single();
+
+        if (!profile?.employee_id) { router.replace("/login"); return; }
+
+        const { data: emp } = await supabase
+          .from("employees")
+          .select("*")
+          .eq("id", profile.employee_id)
+          .single() as { data: Employee | null };
+
         if (!emp) { router.replace("/login"); return; }
-        if (emp.status === "active") { router.replace("/dashboard"); return; }
-        if (emp.status === "rejected") { router.replace("/pending"); return; }
+
+        const empStatus = (emp.custom_fields as Record<string, unknown>)?.status as string | undefined;
+        if (emp.is_active) { router.replace("/dashboard"); return; }
+        if (empStatus === "rejected") { router.replace("/pending"); return; }
+
         setEmployee(emp);
         // Pre-fill if returning
-        if (emp.firstName) personalForm.setValue("firstName", emp.firstName);
-        if (emp.lastName) personalForm.setValue("lastName", emp.lastName);
-        if (emp.phone) contactForm.setValue("phone", emp.phone);
-        if (emp.address) contactForm.setValue("address", emp.address);
-        if (emp.bankAccount) bankForm.setValue("bankAccount", emp.bankAccount);
+        if (emp.first_name) personalForm.setValue("firstName", emp.first_name);
+        if (emp.last_name) personalForm.setValue("lastName", emp.last_name);
+        if (emp.contact_phone) contactForm.setValue("phone", emp.contact_phone);
+        const addr = emp.address as Record<string, string> | null;
+        if (addr?.street) contactForm.setValue("address", `${addr.street}, ${addr.zip ?? ""} ${addr.city ?? ""}`.trim());
+        if (emp.bank_iban) bankForm.setValue("bankAccount", emp.bank_iban);
       } catch {
         router.replace("/login");
       }
@@ -91,14 +106,26 @@ export default function OnboardingPage() {
     if (!employee) return;
     setSaving(true);
     try {
-      await databases.updateDocument(DB_ID, COLLECTIONS.EMPLOYEES, employee.$id, {
-        firstName: collected.personal?.firstName ?? employee.firstName,
-        lastName: collected.personal?.lastName ?? employee.lastName,
-        phone: collected.contact?.phone ?? "",
-        address: collected.contact?.address ?? "",
-        bankAccount: bank.bankAccount ?? "",
-        onboardingStep: "submitted",
-      });
+      const { error } = await supabase
+        .from("employees")
+        .update({
+          first_name: collected.personal?.firstName ?? employee.first_name,
+          last_name: collected.personal?.lastName ?? employee.last_name,
+          birth_date: collected.personal?.birthDate ?? null,
+          contact_phone: collected.contact?.phone ?? null,
+          address: collected.contact?.address
+            ? { street: collected.contact.address }
+            : {},
+          bank_iban: bank.bankAccount ?? null,
+          svnr: bank.svNumber ?? null,
+          custom_fields: {
+            ...(employee.custom_fields as object),
+            status: "pending",
+            onboarding_step: "submitted",
+          },
+        })
+        .eq("id", employee.id);
+      if (error) throw error;
       toast.success("Daten wurden erfolgreich übermittelt!");
       router.replace("/pending");
     } catch {

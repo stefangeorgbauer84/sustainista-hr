@@ -1,10 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { getAllPendingRequests, getApprovedLeaveForCalendar } from "@/lib/leave";
-import { databases, DB_ID, COLLECTIONS } from "@/lib/appwrite";
-import { Query } from "appwrite";
-import type { Employee, LeaveRequest } from "@/types";
+import { getAllPendingAbsences, getApprovedAbsencesForCalendar } from "@/lib/leave";
+import { supabase } from "@/lib/supabase";
+import type { Employee, Absence } from "@/types";
 import { Users, Clock, Calendar, AlertCircle } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
@@ -14,19 +13,23 @@ export default function AdminPage() {
   const { data: employees = [] } = useQuery<Employee[]>({
     queryKey: ["all-employees"],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, COLLECTIONS.EMPLOYEES, [Query.limit(100)]);
-      return res.documents as unknown as Employee[];
+      const { data, error } = await supabase
+        .from("employees")
+        .select("*")
+        .limit(100);
+      if (error) throw error;
+      return data as unknown as Employee[];
     },
   });
 
-  const { data: pending = [] } = useQuery<LeaveRequest[]>({
+  const { data: pending = [] } = useQuery<Absence[]>({
     queryKey: ["pending-leaves"],
-    queryFn: getAllPendingRequests,
+    queryFn: getAllPendingAbsences,
   });
 
-  const { data: upcoming = [] } = useQuery<LeaveRequest[]>({
+  const { data: upcoming = [] } = useQuery<Absence[]>({
     queryKey: ["upcoming-leaves"],
-    queryFn: getApprovedLeaveForCalendar,
+    queryFn: getApprovedAbsencesForCalendar,
   });
 
   return (
@@ -53,12 +56,12 @@ export default function AdminPage() {
           </div>
           <div className="space-y-2">
             {pending.slice(0, 3).map(req => (
-              <div key={req.$id} className="flex items-center justify-between rounded-lg bg-white px-4 py-3">
+              <div key={req.id} className="flex items-center justify-between rounded-lg bg-white px-4 py-3">
                 <div>
-                  <p className="text-sm font-medium text-gray-900">{req.employeeName}</p>
+                  <p className="text-sm font-medium text-gray-900">{(req as any).employees?.first_name + " " + (req as any).employees?.last_name}</p>
                   <p className="text-xs text-gray-500">
-                    {format(parseISO(req.startDate), "d. MMM", { locale: de })} –{" "}
-                    {format(parseISO(req.endDate), "d. MMM yyyy", { locale: de })} · {req.days} Tage
+                    {format(parseISO(req.start_date), "d. MMM", { locale: de })} –{" "}
+                    {format(parseISO(req.end_date), "d. MMM yyyy", { locale: de })} · {req.working_days} Tage
                   </p>
                 </div>
                 <Link href="/admin/leave" className="text-xs text-[#4F772D] font-medium hover:underline">
@@ -82,18 +85,15 @@ export default function AdminPage() {
         </div>
         <div className="divide-y divide-gray-50">
           {employees.slice(0, 5).map(emp => (
-            <div key={emp.$id} className="flex items-center justify-between px-5 py-3">
+            <div key={emp.id} className="flex items-center justify-between px-5 py-3">
               <div>
-                <p className="text-sm font-medium text-gray-900">{emp.firstName} {emp.lastName}</p>
-                <p className="text-xs text-gray-400">{emp.position} · {emp.department}</p>
+                <p className="text-sm font-medium text-gray-900">{emp.first_name} {emp.last_name}</p>
+                <p className="text-xs text-gray-400">{emp.employment_type} · {emp.hours_per_week}h/Woche</p>
               </div>
               <div className="text-right">
                 <p className="text-xs text-gray-500">
-                  Urlaub: {emp.vacationDaysTotal - emp.vacationDaysUsed}/{emp.vacationDaysTotal} Tage
+                  seit {emp.entry_date?.slice(0, 7)}
                 </p>
-                <span className={`text-[10px] rounded-full px-2 py-0.5 ${emp.role === "admin" ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-600"}`}>
-                  {emp.role === "admin" ? "Admin" : "Mitarbeiter"}
-                </span>
               </div>
             </div>
           ))}

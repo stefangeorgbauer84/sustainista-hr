@@ -3,11 +3,11 @@
 import { useAuth } from "@/context/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  getRunningEntry, getTimeEntriesForEmployee,
+  getRunningEntry, getTimeRecordsForEmployee,
   startTimer, stopTimer, calcWorkedMinutes, formatDuration,
 } from "@/lib/time";
-import { databases, DB_ID, COLLECTIONS } from "@/lib/appwrite";
-import { ID } from "appwrite";
+import { supabase } from "@/lib/supabase";
+import type { TimeRecord } from "@/types";
 import { toast } from "sonner";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
@@ -38,16 +38,16 @@ export default function TimePage() {
   const [year] = useState(now.getFullYear());
   const [showManual, setShowManual] = useState(false);
 
-  const { data: running } = useQuery({
-    queryKey: ["running", employee?.$id],
-    queryFn: () => getRunningEntry(employee!.$id),
+  const { data: running } = useQuery<TimeRecord | null>({
+    queryKey: ["running", employee?.id],
+    queryFn: () => getRunningEntry(),
     enabled: !!employee,
     refetchInterval: 30_000,
   });
 
-  const { data: entries = [], isLoading } = useQuery({
-    queryKey: ["time-entries", employee?.$id, year, month],
-    queryFn: () => getTimeEntriesForEmployee(employee!.$id, year, month),
+  const { data: entries = [], isLoading } = useQuery<TimeRecord[]>({
+    queryKey: ["time-records", employee?.id, year, month],
+    queryFn: () => getTimeRecordsForEmployee(employee!.id, year, month),
     enabled: !!employee,
   });
 
@@ -60,43 +60,63 @@ export default function TimePage() {
   });
 
   const startMutation = useMutation({
-    mutationFn: () => startTimer(employee!.$id),
+    mutationFn: () => startTimer(),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["running"] }); toast.success("Zeiterfassung gestartet"); },
     onError: () => toast.error("Fehler beim Starten"),
   });
 
   const stopMutation = useMutation({
-    mutationFn: () => stopTimer(running!.$id),
+    mutationFn: () => stopTimer(running!.id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["running"] });
-      qc.invalidateQueries({ queryKey: ["time-entries"] });
+      qc.invalidateQueries({ queryKey: ["time-records"] });
       toast.success("Zeiterfassung gestoppt");
     },
     onError: () => toast.error("Fehler beim Stoppen"),
   });
 
   const addBreakMutation = useMutation({
-    mutationFn: ({ entryId, extra }: { entryId: string; extra: number }) =>
-      databases.updateDocument(DB_ID, COLLECTIONS.TIME_ENTRIES, entryId, {
-        breakMinutes: extra,
-      }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["time-entries"] }); toast.success("Pause eingetragen"); },
+    mutationFn: async ({ entryId, currentBreak, extra }: { entryId: string; currentBreak: number; extra: number }) => {
+      const { data, error } = await supabase
+        .from("time_records")
+        .update({ break_minutes: currentBreak + extra })
+        .eq("id", entryId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["time-records"] }); toast.success("Pause eingetragen"); },
   });
 
   const manualMutation = useMutation({
     mutationFn: async (data: ManualForm) => {
-      return databases.createDocument(DB_ID, COLLECTIONS.TIME_ENTRIES, ID.unique(), {
-        employeeId: employee!.$id,
-        date: data.date,
-        startTime: data.startTime,
-        endTime: data.endTime,
-        breakMinutes: data.breakMinutes,
-        note: data.note ?? null,
-        status: "completed",
-      });
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("employee_id, company_id")
+        .eq("id", (await supabase.auth.getUser()).data.user!.id)
+        .single();
+
+      const { data: record, error } = await supabase
+        .from("time_records")
+        .insert({
+          employee_id: profile!.employee_id,
+          company_id: profile!.company_id,
+          work_date: data.date,
+          start_time: data.startTime,
+          end_time: data.endTime,
+          break_minutes: data.breakMinutes,
+          notes: data.note ?? null,
+          status: "submitted",
+          created_via: "manual",
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return record;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["time-entries"] });
+      qc.invalidateQueries({ queryKey: ["time-records"] });
       toast.success("Zeiteintrag gespeichert");
       reset();
       setShowManual(false);
@@ -105,7 +125,7 @@ export default function TimePage() {
   });
 
   const totalMinutes = entries
-    .filter(e => e.status !== "running")
+    .filter(e => e.status !== "draft" || e.end_time != null)
     .reduce((s, e) => s + calcWorkedMinutes(e), 0);
 
   // AZG §11: 30 Min Pflichtpause nach 6h, 45 Min nach 9h
@@ -158,7 +178,7 @@ export default function TimePage() {
             <p className="text-sm font-medium text-gray-700">Heute, {format(now, "d. MMMM", { locale: de })}</p>
             {running && (
               <p className="mt-1 text-2xl font-semibold text-[#4F772D]">
-                Läuft seit {running.startTime} Uhr
+                Läuft seit {running.start_time} Uhr
               </p>
             )}
           </div>
@@ -282,23 +302,23 @@ export default function TimePage() {
             entries.map(entry => {
               const mins = calcWorkedMinutes(entry);
               const isOver = mins > 10 * 60;
-              const pauseWarn = entry.endTime ? getPauseWarning(mins + entry.breakMinutes) : null;
+              const pauseWarn = entry.end_time ? getPauseWarning(mins + entry.break_minutes) : null;
               return (
-                <div key={entry.$id} className="flex items-center justify-between px-5 py-3">
+                <div key={entry.id} className="flex items-center justify-between px-5 py-3">
                   <div>
                     <p className="text-sm font-medium text-gray-900">
-                      {format(parseISO(entry.date), "EEE, d. MMM", { locale: de })}
+                      {format(parseISO(entry.work_date), "EEE, d. MMM", { locale: de })}
                     </p>
                     <p className="text-xs text-gray-400">
-                      {entry.startTime} – {entry.endTime ?? "läuft"}
-                      {entry.breakMinutes > 0 && (
+                      {entry.start_time} – {entry.end_time ?? "läuft"}
+                      {entry.break_minutes > 0 && (
                         <span className="ml-2 inline-flex items-center gap-0.5 text-gray-400">
                           <Coffee className="h-3 w-3" strokeWidth={1.5} />
-                          {entry.breakMinutes} Min.
+                          {entry.break_minutes} Min.
                         </span>
                       )}
                     </p>
-                    {entry.note && <p className="text-xs text-gray-400 italic">{entry.note}</p>}
+                    {entry.notes && <p className="text-xs text-gray-400 italic">{entry.notes}</p>}
                     {pauseWarn && (
                       <p className="mt-0.5 text-[10px] text-amber-500 flex items-center gap-1">
                         <AlertTriangle className="h-3 w-3" strokeWidth={1.5} />
@@ -307,9 +327,9 @@ export default function TimePage() {
                     )}
                   </div>
                   <div className="flex items-center gap-3">
-                    {entry.endTime && entry.breakMinutes === 0 && mins > 6 * 60 && (
+                    {entry.end_time && entry.break_minutes === 0 && mins > 6 * 60 && (
                       <button
-                        onClick={() => addBreakMutation.mutate({ entryId: entry.$id, extra: 30 })}
+                        onClick={() => addBreakMutation.mutate({ entryId: entry.id, currentBreak: entry.break_minutes, extra: 30 })}
                         className="text-xs text-amber-600 underline underline-offset-2"
                       >
                         + 30 Min. Pause
@@ -317,14 +337,14 @@ export default function TimePage() {
                     )}
                     <div className="text-right">
                       <p className={`text-sm font-medium ${isOver ? "text-red-500" : "text-gray-900"}`}>
-                        {entry.endTime ? formatDuration(mins) : "—"}
+                        {entry.end_time ? formatDuration(mins) : "—"}
                       </p>
                       <span className={`text-[10px] rounded-full px-2 py-0.5 ${
                         entry.status === "approved" ? "bg-green-100 text-green-700" :
-                        entry.status === "running" ? "bg-blue-100 text-blue-700" :
+                        entry.status === "draft" && !entry.end_time ? "bg-blue-100 text-blue-700" :
                         "bg-gray-100 text-gray-500"
                       }`}>
-                        {entry.status === "approved" ? "Genehmigt" : entry.status === "running" ? "Läuft" : "Ausstehend"}
+                        {entry.status === "approved" ? "Genehmigt" : (entry.status === "draft" && !entry.end_time) ? "Läuft" : "Ausstehend"}
                       </span>
                     </div>
                   </div>
@@ -337,7 +357,7 @@ export default function TimePage() {
         {entries.length > 0 && (
           <div className="border-t border-gray-100 bg-gray-50 px-5 py-3 flex items-center justify-between text-sm">
             <div className="flex gap-6 text-xs text-gray-500">
-              <span>{entries.filter(e => e.status !== "running").length} Einträge</span>
+              <span>{entries.filter(e => e.end_time != null).length} Einträge</span>
               {totalMinutes > 160 * 60 && (
                 <span className="text-amber-600 font-medium">
                   +{formatDuration(totalMinutes - 160 * 60)} Überstunden

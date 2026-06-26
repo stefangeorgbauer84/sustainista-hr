@@ -3,8 +3,8 @@
 import { useAuth } from "@/context/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { getRunningEntry, getTimeEntriesForEmployee, calcWorkedMinutes, formatDuration } from "@/lib/time";
-import { getLeaveRequestsForEmployee } from "@/lib/leave";
+import { getRunningEntry, getTimeRecordsForEmployee, calcWorkedMinutes, formatDuration } from "@/lib/time";
+import { getAbsencesForEmployee, getLeaveBalance } from "@/lib/leave";
 import { Clock, Calendar, FileText, TrendingUp, AlertCircle, Activity } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
@@ -12,11 +12,8 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { Suspense, useEffect } from "react";
 
-const typeLabels: Record<string, string> = {
-  vacation: "Urlaub", sick: "Krankenstand", unpaid: "Unbezahlt", special: "Sonder",
-};
 const statusColors: Record<string, string> = {
-  pending: "bg-amber-100 text-amber-700",
+  requested: "bg-amber-100 text-amber-700",
   approved: "bg-green-100 text-green-700",
   rejected: "bg-red-100 text-red-600",
 };
@@ -35,31 +32,43 @@ export default function DashboardPage() {
   const now = new Date();
 
   const { data: running } = useQuery({
-    queryKey: ["running", employee?.$id],
-    queryFn: () => getRunningEntry(employee!.$id),
+    queryKey: ["running", employee?.id],
+    queryFn: () => getRunningEntry(),
     enabled: !!employee,
     refetchInterval: 30_000,
   });
 
-  const { data: entries = [] } = useQuery({
-    queryKey: ["time-entries", employee?.$id, now.getFullYear(), now.getMonth() + 1],
-    queryFn: () => getTimeEntriesForEmployee(employee!.$id, now.getFullYear(), now.getMonth() + 1),
+  const { data: records = [] } = useQuery({
+    queryKey: ["time-records", employee?.id, now.getFullYear(), now.getMonth() + 1],
+    queryFn: () => getTimeRecordsForEmployee(employee!.id, now.getFullYear(), now.getMonth() + 1),
     enabled: !!employee,
   });
 
-  const { data: leaves = [] } = useQuery({
-    queryKey: ["leaves", employee?.$id],
-    queryFn: () => getLeaveRequestsForEmployee(employee!.$id),
+  const { data: absences = [] } = useQuery({
+    queryKey: ["absences", employee?.id],
+    queryFn: () => getAbsencesForEmployee(employee!.id),
     enabled: !!employee,
   });
 
-  const totalMinutesThisMonth = entries
-    .filter(e => e.status !== "running")
+  const { data: leaveBalance } = useQuery({
+    queryKey: ["leave-balance", employee?.id, now.getFullYear()],
+    queryFn: () => getLeaveBalance(employee!.id, now.getFullYear()),
+    enabled: !!employee,
+  });
+
+  const totalMinutesThisMonth = records
+    .filter(e => e.end_time !== null)
     .reduce((sum, e) => sum + calcWorkedMinutes(e), 0);
 
-  const vacationLeft = (employee?.vacationDaysTotal ?? 25) - (employee?.vacationDaysUsed ?? 0);
-  const pendingLeaves = leaves.filter(l => l.status === "pending").length;
-  const overtimeThisMonth = totalMinutesThisMonth - 160 * 60;
+  const totalDays = leaveBalance
+    ? leaveBalance.entitlement_days + (leaveBalance.carry_over_days ?? 0)
+    : 25;
+  const vacationLeft = leaveBalance
+    ? totalDays - (leaveBalance.taken_days ?? 0)
+    : 25;
+  const pendingAbsences = absences.filter(a => a.status === "requested").length;
+  const monthlyTargetMinutes = Math.round((employee?.hours_per_week ?? 40) * 52 / 12) * 60;
+  const overtimeThisMonth = totalMinutesThisMonth - monthlyTargetMinutes;
 
   const greeting = () => {
     const h = now.getHours();
@@ -68,9 +77,8 @@ export default function DashboardPage() {
     return "Guten Abend";
   };
 
-  // Activity Feed: letzte 5 Urlaubsanträge als Events
-  const recentActivity = [...leaves]
-    .sort((a, b) => b.$createdAt.localeCompare(a.$createdAt))
+  const recentActivity = [...absences]
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .slice(0, 5);
 
   return (
@@ -79,7 +87,7 @@ export default function DashboardPage() {
 
       <div>
         <h1 className="text-xl font-semibold text-gray-900">
-          {greeting()}, {employee?.firstName ?? "—"}
+          {greeting()}, {employee?.first_name ?? "—"}
         </h1>
         <p className="mt-0.5 text-sm text-gray-500">
           {format(now, "EEEE, d. MMMM yyyy", { locale: de })}
@@ -90,7 +98,7 @@ export default function DashboardPage() {
         <div className="flex items-center gap-3 rounded-xl border border-[#4F772D]/30 bg-[#4F772D]/5 px-4 py-3">
           <div className="h-2 w-2 animate-pulse rounded-full bg-[#4F772D]" />
           <p className="text-sm text-[#4F772D] font-medium">
-            Zeiterfassung läuft seit {running.startTime} Uhr
+            Zeiterfassung läuft seit {running.start_time} Uhr
           </p>
           <Link href="/dashboard/time" className="ml-auto text-xs text-[#4F772D] underline underline-offset-2">
             Stoppen →
@@ -100,8 +108,8 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard icon={<Clock className="h-5 w-5" strokeWidth={1.5} />} label="Diesen Monat" value={formatDuration(totalMinutesThisMonth)} sub="Arbeitszeit" color="blue" />
-        <StatCard icon={<Calendar className="h-5 w-5" strokeWidth={1.5} />} label="Urlaubstage" value={`${vacationLeft} / ${employee?.vacationDaysTotal ?? 25}`} sub="verbleibend" color="green" />
-        <StatCard icon={<AlertCircle className="h-5 w-5" strokeWidth={1.5} />} label="Offene Anträge" value={String(pendingLeaves)} sub="in Bearbeitung" color="yellow" />
+        <StatCard icon={<Calendar className="h-5 w-5" strokeWidth={1.5} />} label="Urlaubstage" value={`${vacationLeft} / ${totalDays}`} sub="verbleibend" color="green" />
+        <StatCard icon={<AlertCircle className="h-5 w-5" strokeWidth={1.5} />} label="Offene Anträge" value={String(pendingAbsences)} sub="in Bearbeitung" color="yellow" />
         <StatCard
           icon={<TrendingUp className="h-5 w-5" strokeWidth={1.5} />}
           label="Überstunden"
@@ -112,7 +120,6 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Schnellzugriff */}
         <div className="space-y-3">
           <h2 className="text-sm font-medium text-gray-500">Schnellzugriff</h2>
           <div className="grid gap-3">
@@ -123,7 +130,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Activity Feed */}
         <div className="rounded-xl border border-gray-200 bg-white">
           <div className="border-b border-gray-100 px-5 py-4 flex items-center gap-2">
             <Activity className="h-4 w-4 text-gray-400" strokeWidth={1.5} />
@@ -132,24 +138,25 @@ export default function DashboardPage() {
           <div className="divide-y divide-gray-50">
             {recentActivity.length === 0 ? (
               <p className="px-5 py-8 text-center text-sm text-gray-400">Noch keine Aktivitäten</p>
-            ) : recentActivity.map(leave => (
-              <div key={leave.$id} className="flex items-start gap-3 px-5 py-3">
-                <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs ${statusColors[leave.status]}`}>
-                  {leave.status === "approved" ? "✓" : leave.status === "rejected" ? "✗" : "…"}
+            ) : recentActivity.map(absence => (
+              <div key={absence.id} className="flex items-start gap-3 px-5 py-3">
+                <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs ${statusColors[absence.status] ?? "bg-gray-100 text-gray-600"}`}>
+                  {absence.status === "approved" ? "✓" : absence.status === "rejected" ? "✗" : "…"}
                 </div>
                 <div>
                   <p className="text-sm text-gray-900">
-                    <span className="font-medium">{typeLabels[leave.type]}</span>-Antrag{" "}
-                    <span className={`font-medium ${leave.status === "approved" ? "text-green-600" : leave.status === "rejected" ? "text-red-500" : "text-amber-600"}`}>
-                      {leave.status === "approved" ? "genehmigt" : leave.status === "rejected" ? "abgelehnt" : "gestellt"}
+                    Abwesenheitsantrag{" "}
+                    <span className={`font-medium ${absence.status === "approved" ? "text-green-600" : absence.status === "rejected" ? "text-red-500" : "text-amber-600"}`}>
+                      {absence.status === "approved" ? "genehmigt" : absence.status === "rejected" ? "abgelehnt" : "gestellt"}
                     </span>
                   </p>
                   <p className="text-xs text-gray-400">
-                    {format(parseISO(leave.startDate), "d. MMM", { locale: de })} –{" "}
-                    {format(parseISO(leave.endDate), "d. MMM yyyy", { locale: de })} · {leave.days} Tage
+                    {format(parseISO(absence.start_date), "d. MMM", { locale: de })} –{" "}
+                    {format(parseISO(absence.end_date), "d. MMM yyyy", { locale: de })}
+                    {absence.working_days != null && ` · ${absence.working_days} Tage`}
                   </p>
                   <p className="text-[10px] text-gray-300 mt-0.5">
-                    {format(parseISO(leave.$createdAt), "d. MMM yyyy, HH:mm", { locale: de })}
+                    {format(parseISO(absence.created_at), "d. MMM yyyy, HH:mm", { locale: de })}
                   </p>
                 </div>
               </div>

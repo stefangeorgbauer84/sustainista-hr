@@ -1,14 +1,19 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { databases, DB_ID, COLLECTIONS } from "@/lib/appwrite";
-import { PERF_COLLECTIONS, currentPeriod } from "@/app/lib/collections";
-import { Query, ID } from "appwrite";
-import type { Employee, PerformanceReview } from "@/types";
+import { supabase } from "@/lib/supabase";
+import { currentPeriod } from "@/app/lib/collections";
+import type { Employee } from "@/types";
+
+type PerformanceReview = {
+  id: string; employee_id: string; period: string; status: string;
+  self_assessment: string | null; manager_assessment: string | null;
+  self_score: number | null; manager_score: number | null;
+  strengths: string | null; growth_areas: string | null;
+  created_at: string; updated_at: string;
+};
 import { toast } from "sonner";
 import { useState } from "react";
-import { format, parseISO } from "date-fns";
-import { de } from "date-fns/locale";
 import { ClipboardList, Star, ChevronDown, ChevronUp, CheckCircle } from "lucide-react";
 
 const SCORE_LABELS = ["", "Unter Erwartung", "Entwicklungsbedarf", "Erfüllt Erwartungen", "Übertrifft Erwartungen", "Exzellent"];
@@ -47,34 +52,43 @@ export default function PerformancePage() {
   const { data: employees = [] } = useQuery<Employee[]>({
     queryKey: ["all-employees"],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, COLLECTIONS.EMPLOYEES, [
-        Query.equal("status", "active"), Query.limit(100),
-      ]);
-      return res.documents as unknown as Employee[];
+      const { data, error } = await supabase
+        .from("employees")
+        .select("*")
+        .eq("status", "active")
+        .limit(100);
+      if (error) throw error;
+      return data as unknown as Employee[];
     },
   });
 
   const { data: reviews = [] } = useQuery<PerformanceReview[]>({
     queryKey: ["reviews", period],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, PERF_COLLECTIONS.REVIEWS, [
-        Query.equal("period", period), Query.limit(100),
-      ]);
-      return res.documents as unknown as PerformanceReview[];
+      const { data, error } = await supabase
+        .from("performance_reviews")
+        .select("*")
+        .eq("period", period)
+        .limit(100);
+      if (error) throw error;
+      return data as unknown as PerformanceReview[];
     },
   });
 
   function getReview(empId: string) {
-    return reviews.find(r => r.employeeId === empId);
+    return reviews.find(r => r.employee_id === empId);
   }
 
   const initiateMutation = useMutation({
     mutationFn: async (empId: string) => {
-      return databases.createDocument(DB_ID, PERF_COLLECTIONS.REVIEWS, ID.unique(), {
-        employeeId: empId,
-        period,
-        status: "self-pending",
-      });
+      const { error } = await supabase
+        .from("performance_reviews")
+        .insert({
+          employeeId: empId,
+          period,
+          status: "self-pending",
+        });
+      if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["reviews"] });
@@ -85,13 +99,17 @@ export default function PerformancePage() {
 
   const completeMutation = useMutation({
     mutationFn: async (review: PerformanceReview) => {
-      return databases.updateDocument(DB_ID, PERF_COLLECTIONS.REVIEWS, review.$id, {
-        managerAssessment: managerText[review.$id] ?? "",
-        managerScore: managerScore[review.$id] ?? 0,
-        strengths: strengths[review.$id] ?? "",
-        growthAreas: growthAreas[review.$id] ?? "",
-        status: "complete",
-      });
+      const { error } = await supabase
+        .from("performance_reviews")
+        .update({
+          manager_assessment: managerText[review.id] ?? "",
+          manager_score: managerScore[review.id] ?? 0,
+          strengths: strengths[review.id] ?? "",
+          growth_areas: growthAreas[review.id] ?? "",
+          status: "complete",
+        })
+        .eq("id", review.id);
+      if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["reviews"] });
@@ -102,11 +120,11 @@ export default function PerformancePage() {
   });
 
   function openReview(review: PerformanceReview) {
-    setExpandedId(expandedId === review.$id ? null : review.$id);
-    if (!managerText[review.$id] && review.managerAssessment) setManagerText(p => ({ ...p, [review.$id]: review.managerAssessment ?? "" }));
-    if (!managerScore[review.$id] && review.managerScore) setManagerScore(p => ({ ...p, [review.$id]: review.managerScore ?? 0 }));
-    if (!strengths[review.$id] && review.strengths) setStrengths(p => ({ ...p, [review.$id]: review.strengths ?? "" }));
-    if (!growthAreas[review.$id] && review.growthAreas) setGrowthAreas(p => ({ ...p, [review.$id]: review.growthAreas ?? "" }));
+    setExpandedId(expandedId === review.id ? null : review.id);
+    if (!managerText[review.id] && review.manager_assessment) setManagerText(p => ({ ...p, [review.id]: review.manager_assessment ?? "" }));
+    if (!managerScore[review.id] && review.manager_score) setManagerScore(p => ({ ...p, [review.id]: review.manager_score ?? 0 }));
+    if (!strengths[review.id] && review.strengths) setStrengths(p => ({ ...p, [review.id]: review.strengths ?? "" }));
+    if (!growthAreas[review.id] && review.growth_areas) setGrowthAreas(p => ({ ...p, [review.id]: review.growth_areas ?? "" }));
   }
 
   const complete = reviews.filter(r => r.status === "complete").length;
@@ -144,18 +162,18 @@ export default function PerformancePage() {
         </div>
         <div className="divide-y divide-gray-50">
           {employees.map(emp => {
-            const review = getReview(emp.$id);
-            const isExpanded = expandedId === review?.$id;
+            const review = getReview(emp.id);
+            const isExpanded = expandedId === review?.id;
             return (
-              <div key={emp.$id}>
+              <div key={emp.id}>
                 <div className="flex items-center justify-between px-5 py-4">
                   <div className="flex items-center gap-3">
                     <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#4F772D]/10 text-sm font-semibold text-[#4F772D]">
-                      {emp.firstName[0]}{emp.lastName[0]}
+                      {emp.first_name[0]}{emp.last_name[0]}
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-gray-900">{emp.firstName} {emp.lastName}</p>
-                      <p className="text-xs text-gray-400">{emp.position} · {emp.department}</p>
+                      <p className="text-sm font-medium text-gray-900">{emp.first_name} {emp.last_name}</p>
+                      <p className="text-xs text-gray-400">{emp.employment_type} · {""}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -172,15 +190,15 @@ export default function PerformancePage() {
                          "Mitarbeiter ausstehend"}
                       </span>
                     )}
-                    {review?.selfScore && (
+                    {review?.self_score && (
                       <div className="flex items-center gap-1">
                         <Star className="h-3.5 w-3.5 text-amber-400" fill="currentColor" strokeWidth={0} />
-                        <span className="text-xs text-gray-500">{review.selfScore}/5 (Selbst)</span>
+                        <span className="text-xs text-gray-500">{review.self_score}/5 (Selbst)</span>
                       </div>
                     )}
                     {!review ? (
                       <button
-                        onClick={() => initiateMutation.mutate(emp.$id)}
+                        onClick={() => initiateMutation.mutate(emp.id)}
                         disabled={initiateMutation.isPending}
                         className="rounded-lg border border-[#4F772D] px-3 py-1.5 text-xs text-[#4F772D] hover:bg-[#4F772D]/5 transition"
                       >
@@ -204,20 +222,20 @@ export default function PerformancePage() {
                 {review && isExpanded && (
                   <div className="border-t border-gray-100 bg-gray-50 px-5 py-5 space-y-5">
                     {/* Self assessment */}
-                    {review.selfAssessment && (
+                    {review.self_assessment && (
                       <div className="rounded-xl bg-white border border-gray-200 p-4">
                         <div className="mb-2 flex items-center justify-between">
                           <p className="text-xs font-semibold text-gray-700">Selbsteinschätzung des Mitarbeiters</p>
-                          {review.selfScore && (
+                          {review.self_score && (
                             <div className="flex items-center gap-1">
                               {[1,2,3,4,5].map(n => (
-                                <Star key={n} className={`h-3.5 w-3.5 ${n <= review.selfScore! ? "text-amber-400" : "text-gray-200"}`}
-                                  fill={n <= review.selfScore! ? "currentColor" : "none"} strokeWidth={1} />
+                                <Star key={n} className={`h-3.5 w-3.5 ${n <= review.self_score! ? "text-amber-400" : "text-gray-200"}`}
+                                  fill={n <= review.self_score! ? "currentColor" : "none"} strokeWidth={1} />
                               ))}
                             </div>
                           )}
                         </div>
-                        <p className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">{review.selfAssessment}</p>
+                        <p className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">{review.self_assessment}</p>
                       </div>
                     )}
 
@@ -226,18 +244,18 @@ export default function PerformancePage() {
                       <div className="rounded-xl bg-white border border-[#4F772D]/20 p-4">
                         <div className="mb-2 flex items-center justify-between">
                           <p className="text-xs font-semibold text-[#4F772D]">Meine Beurteilung</p>
-                          {review.managerScore && (
+                          {review.manager_score && (
                             <div className="flex items-center gap-1">
                               {[1,2,3,4,5].map(n => (
-                                <Star key={n} className={`h-3.5 w-3.5 ${n <= review.managerScore! ? "text-[#4F772D]" : "text-gray-200"}`}
-                                  fill={n <= review.managerScore! ? "currentColor" : "none"} strokeWidth={1} />
+                                <Star key={n} className={`h-3.5 w-3.5 ${n <= review.manager_score! ? "text-[#4F772D]" : "text-gray-200"}`}
+                                  fill={n <= review.manager_score! ? "currentColor" : "none"} strokeWidth={1} />
                               ))}
                             </div>
                           )}
                         </div>
-                        <p className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">{review.managerAssessment}</p>
+                        <p className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">{review.manager_assessment}</p>
                         {review.strengths && <div className="mt-3"><p className="text-xs font-medium text-green-700 mb-1">Stärken</p><p className="text-xs text-gray-600">{review.strengths}</p></div>}
-                        {review.growthAreas && <div className="mt-2"><p className="text-xs font-medium text-blue-700 mb-1">Entwicklungsfelder</p><p className="text-xs text-gray-600">{review.growthAreas}</p></div>}
+                        {review.growth_areas && <div className="mt-2"><p className="text-xs font-medium text-blue-700 mb-1">Entwicklungsfelder</p><p className="text-xs text-gray-600">{review.growth_areas}</p></div>}
                       </div>
                     ) : (
                       /* Editable manager review */
@@ -245,33 +263,33 @@ export default function PerformancePage() {
                         <p className="text-xs font-semibold text-gray-700">Deine Manager-Beurteilung</p>
                         <div>
                           <label className="mb-1.5 block text-xs font-medium text-gray-700">Gesamtbewertung</label>
-                          <ScorePicker value={managerScore[review.$id] ?? 0} onChange={n => setManagerScore(p => ({ ...p, [review.$id]: n }))} />
+                          <ScorePicker value={managerScore[review.id] ?? 0} onChange={n => setManagerScore(p => ({ ...p, [review.id]: n }))} />
                         </div>
                         <div>
                           <label className="mb-1.5 block text-xs font-medium text-gray-700">Beurteilung (narrativ)</label>
                           <textarea rows={4} className={inp}
                             placeholder="Wie hat sich die Person in dieser Periode entwickelt? Was lief besonders gut?"
-                            value={managerText[review.$id] ?? ""}
-                            onChange={e => setManagerText(p => ({ ...p, [review.$id]: e.target.value }))} />
+                            value={managerText[review.id] ?? ""}
+                            onChange={e => setManagerText(p => ({ ...p, [review.id]: e.target.value }))} />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <label className="mb-1.5 block text-xs font-medium text-gray-700">Stärken</label>
                             <textarea rows={3} className={inp} placeholder="Was sind die besonderen Stärken?"
-                              value={strengths[review.$id] ?? ""}
-                              onChange={e => setStrengths(p => ({ ...p, [review.$id]: e.target.value }))} />
+                              value={strengths[review.id] ?? ""}
+                              onChange={e => setStrengths(p => ({ ...p, [review.id]: e.target.value }))} />
                           </div>
                           <div>
                             <label className="mb-1.5 block text-xs font-medium text-gray-700">Entwicklungsfelder</label>
                             <textarea rows={3} className={inp} placeholder="Wo gibt es Wachstumspotenzial?"
-                              value={growthAreas[review.$id] ?? ""}
-                              onChange={e => setGrowthAreas(p => ({ ...p, [review.$id]: e.target.value }))} />
+                              value={growthAreas[review.id] ?? ""}
+                              onChange={e => setGrowthAreas(p => ({ ...p, [review.id]: e.target.value }))} />
                           </div>
                         </div>
                         <div className="flex justify-end">
                           <button
                             onClick={() => completeMutation.mutate(review)}
-                            disabled={!managerText[review.$id]?.trim() || !managerScore[review.$id] || completeMutation.isPending}
+                            disabled={!managerText[review.id]?.trim() || !managerScore[review.id] || completeMutation.isPending}
                             className="flex items-center gap-2 rounded-lg bg-[#4F772D] px-4 py-2 text-sm font-medium text-white hover:bg-[#31572C] disabled:opacity-60"
                           >
                             <CheckCircle className="h-4 w-4" strokeWidth={1.5} />

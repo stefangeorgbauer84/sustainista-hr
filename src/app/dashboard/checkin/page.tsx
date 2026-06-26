@@ -3,14 +3,21 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { databases, DB_ID } from "@/lib/appwrite";
+import { supabase } from "@/lib/supabase";
 import { PERF_COLLECTIONS, currentWeekLabel } from "@/app/lib/collections";
-import { Query, ID } from "appwrite";
-import type { CheckIn } from "@/types";
 import { toast } from "sonner";
-import { format, parseISO } from "date-fns";
-import { de } from "date-fns/locale";
 import { HeartPulse, CheckCircle, TrendingUp } from "lucide-react";
+
+interface CheckIn {
+  id: string;
+  employee_id: string;
+  week_label: string;
+  energy_level: number;
+  priority: string;
+  blocker: string | null;
+  satisfaction: number | null;
+  created_at: string;
+}
 
 const ENERGY_LABELS = ["", "Erschöpft", "Müde", "Okay", "Gut", "Sehr gut"];
 const ENERGY_COLORS = ["", "bg-red-100 text-red-600", "bg-orange-100 text-orange-600", "bg-amber-100 text-amber-600", "bg-green-100 text-green-600", "bg-emerald-100 text-emerald-700"];
@@ -29,23 +36,25 @@ export default function CheckInPage() {
   const [done, setDone] = useState(false);
 
   const { data: history = [] } = useQuery<CheckIn[]>({
-    queryKey: ["checkins", employee?.$id],
+    queryKey: ["checkins", employee?.id],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, PERF_COLLECTIONS.CHECK_INS, [
-        Query.equal("employeeId", employee!.$id),
-        Query.orderDesc("$createdAt"),
-        Query.limit(20),
-      ]);
-      return res.documents as unknown as CheckIn[];
+      const { data, error } = await supabase
+        .from(PERF_COLLECTIONS.CHECK_INS)
+        .select("*")
+        .eq("employee_id", employee!.id)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      return data ?? [];
     },
     enabled: !!employee,
   });
 
-  const thisWeek = history.find(c => c.weekLabel === weekLabel);
+  const thisWeek = history.find(c => c.week_label === weekLabel);
 
   useEffect(() => {
     if (thisWeek) {
-      setEnergy(thisWeek.energyLevel);
+      setEnergy(thisWeek.energy_level);
       setPriority(thisWeek.priority);
       setBlocker(thisWeek.blocker ?? "");
       setSatisfaction(thisWeek.satisfaction ?? 0);
@@ -57,21 +66,29 @@ export default function CheckInPage() {
     mutationFn: async () => {
       if (energy === 0 || !priority.trim()) throw new Error("Energie und Priorität erforderlich");
       if (thisWeek) {
-        return databases.updateDocument(DB_ID, PERF_COLLECTIONS.CHECK_INS, thisWeek.$id, {
-          energyLevel: energy,
-          priority: priority.trim(),
-          blocker: blocker.trim() || null,
-          satisfaction: satisfaction || null,
-        });
+        const { error } = await supabase
+          .from(PERF_COLLECTIONS.CHECK_INS)
+          .update({
+            energy_level: energy,
+            priority: priority.trim(),
+            blocker: blocker.trim() || null,
+            satisfaction: satisfaction || null,
+          })
+          .eq("id", thisWeek.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from(PERF_COLLECTIONS.CHECK_INS)
+          .insert({
+            employee_id: employee!.id,
+            week_label: weekLabel,
+            energy_level: energy,
+            priority: priority.trim(),
+            blocker: blocker.trim() || null,
+            satisfaction: satisfaction || null,
+          });
+        if (error) throw error;
       }
-      return databases.createDocument(DB_ID, PERF_COLLECTIONS.CHECK_INS, ID.unique(), {
-        employeeId: employee!.$id,
-        weekLabel,
-        energyLevel: energy,
-        priority: priority.trim(),
-        blocker: blocker.trim() || null,
-        satisfaction: satisfaction || null,
-      });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["checkins"] });
@@ -185,20 +202,20 @@ export default function CheckInPage() {
       </div>
 
       {/* History */}
-      {history.filter(c => c.weekLabel !== weekLabel).length > 0 && (
+      {history.filter(c => c.week_label !== weekLabel).length > 0 && (
         <div className="rounded-xl border border-gray-200 bg-white">
           <div className="flex items-center gap-2 border-b border-gray-100 px-5 py-4">
             <TrendingUp className="h-4 w-4 text-gray-400" strokeWidth={1.5} />
             <h2 className="text-sm font-medium text-gray-900">Verlauf</h2>
           </div>
           <div className="divide-y divide-gray-50">
-            {history.filter(c => c.weekLabel !== weekLabel).slice(0, 8).map(ci => (
-              <div key={ci.$id} className="flex items-center gap-4 px-5 py-3">
+            {history.filter(c => c.week_label !== weekLabel).slice(0, 8).map(ci => (
+              <div key={ci.id} className="flex items-center gap-4 px-5 py-3">
                 <div className="w-20 flex-shrink-0">
-                  <span className="text-xs font-mono text-gray-400">{ci.weekLabel}</span>
+                  <span className="text-xs font-mono text-gray-400">{ci.week_label}</span>
                 </div>
-                <div className={`flex h-7 w-7 items-center justify-center rounded-full text-sm ${ENERGY_COLORS[ci.energyLevel]}`}>
-                  {ENERGY_EMOJIS[ci.energyLevel]}
+                <div className={`flex h-7 w-7 items-center justify-center rounded-full text-sm ${ENERGY_COLORS[ci.energy_level]}`}>
+                  {ENERGY_EMOJIS[ci.energy_level]}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-gray-700 truncate">{ci.priority}</p>

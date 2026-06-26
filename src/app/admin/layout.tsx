@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import Sidebar from "@/components/layout/Sidebar";
 import MobileSidebar from "@/components/layout/MobileSidebar";
+import GuidedTour from "@/components/layout/GuidedTour";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, isAdminUser, loading } = useAuth();
@@ -32,6 +33,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <main className="flex-1 overflow-y-auto bg-gray-50 p-4 pt-14 md:p-6">
         {children}
       </main>
+      <GuidedTour />
     </div>
   );
 }

@@ -1,10 +1,13 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { databases, DB_ID, COLLECTIONS } from "@/lib/appwrite";
-import { PERF_COLLECTIONS } from "@/app/lib/collections";
-import { Query } from "appwrite";
-import type { Employee, TimeEntry, LeaveRequest, CheckIn } from "@/types";
+import { supabase } from "@/lib/supabase";
+import type { Employee, TimeRecord, Absence } from "@/types";
+
+type CheckIn = {
+  id: string; employee_id: string; week_label: string; energy_level: number;
+  priority: string; blocker: string | null; satisfaction: number | null; created_at: string;
+};
 import { format, startOfMonth, endOfMonth, parseISO, differenceInDays } from "date-fns";
 import { de } from "date-fns/locale";
 import { AlertTriangle, TrendingUp, Users, Calendar, Clock, HeartPulse, Trophy, Lightbulb, ArrowRight } from "lucide-react";
@@ -43,54 +46,66 @@ export default function LeadershipDashboard() {
   const { data: employees = [] } = useQuery<Employee[]>({
     queryKey: ["all-employees"],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, COLLECTIONS.EMPLOYEES, [
-        Query.equal("status", "active"), Query.limit(100),
-      ]);
-      return res.documents as unknown as Employee[];
+      const { data, error } = await supabase
+        .from("employees")
+        .select("*")
+        .eq("status", "active")
+        .limit(100);
+      if (error) throw error;
+      return data as unknown as Employee[];
     },
   });
 
-  const { data: timeEntries = [] } = useQuery<TimeEntry[]>({
+  const { data: timeEntries = [] } = useQuery<TimeRecord[]>({
     queryKey: ["all-time-month"],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, COLLECTIONS.TIME_ENTRIES, [
-        Query.greaterThanEqual("date", monthStart),
-        Query.lessThanEqual("date", monthEnd),
-        Query.limit(500),
-      ]);
-      return res.documents as unknown as TimeEntry[];
+      const { data, error } = await supabase
+        .from("time_records")
+        .select("*")
+        .gte("work_date", monthStart)
+        .lte("work_date", monthEnd)
+        .limit(500);
+      if (error) throw error;
+      return data as unknown as TimeRecord[];
     },
   });
 
-  const { data: leaves = [] } = useQuery<LeaveRequest[]>({
+  const { data: leaves = [] } = useQuery<(Absence & { employees: { first_name: string; last_name: string } | null })[]>({
     queryKey: ["all-leaves-approved"],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, COLLECTIONS.LEAVE_REQUESTS, [
-        Query.equal("status", "approved"),
-        Query.limit(200),
-      ]);
-      return res.documents as unknown as LeaveRequest[];
+      const { data, error } = await supabase
+        .from("absences")
+        .select("*, employees(first_name, last_name)")
+        .eq("status", "approved")
+        .limit(200);
+      if (error) throw error;
+      return data as unknown as (Absence & { employees: { first_name: string; last_name: string } | null })[];
     },
   });
 
   const { data: checkins = [] } = useQuery<CheckIn[]>({
     queryKey: ["all-checkins"],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, PERF_COLLECTIONS.CHECK_INS, [
-        Query.orderDesc("$createdAt"),
-        Query.limit(200),
-      ]);
-      return res.documents as unknown as CheckIn[];
+      const { data, error } = await supabase
+        .from("check_ins")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return data as unknown as CheckIn[];
     },
   });
 
   const { data: pending = [] } = useQuery<Employee[]>({
     queryKey: ["pending-employees"],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, COLLECTIONS.EMPLOYEES, [
-        Query.equal("status", "pending"), Query.limit(20),
-      ]);
-      return res.documents as unknown as Employee[];
+      const { data, error } = await supabase
+        .from("employees")
+        .select("*")
+        .eq("status", "pending")
+        .limit(20);
+      if (error) throw error;
+      return data as unknown as Employee[];
     },
   });
 
@@ -98,51 +113,51 @@ export default function LeadershipDashboard() {
 
   function minutesForEmployee(empId: string) {
     return timeEntries
-      .filter(e => e.employeeId === empId && e.endTime)
+      .filter(e => e.employee_id === empId && e.end_time)
       .reduce((s, e) => {
-        const [sh, sm] = e.startTime.split(":").map(Number);
-        const [eh, em] = (e.endTime ?? "00:00").split(":").map(Number);
-        return s + Math.max(0, (eh * 60 + em) - (sh * 60 + sm) - e.breakMinutes);
+        const [sh, sm] = e.start_time.split(":").map(Number);
+        const [eh, em] = (e.end_time ?? "00:00").split(":").map(Number);
+        return s + Math.max(0, (eh * 60 + em) - (sh * 60 + sm) - e.break_minutes);
       }, 0);
   }
 
   const TARGET_MIN = 38 * 60; // 38h Vollzeit target/month (simplified)
 
   const overtimeAlerts = employees
-    .map(e => ({ emp: e, minutes: minutesForEmployee(e.$id) }))
+    .map(e => ({ emp: e, minutes: minutesForEmployee(e.id) }))
     .filter(x => x.minutes > TARGET_MIN + 10 * 60)
     .sort((a, b) => b.minutes - a.minutes);
 
   const noVacationAlerts = employees.filter(e => {
     const hasApprovedLeave = leaves.some(l =>
-      l.employeeId === e.$id && l.type === "vacation" &&
-      differenceInDays(now, parseISO(l.startDate)) < 90
+      l.employee_id === e.id && l.absence_type_id !== "" &&
+      differenceInDays(now, parseISO(l.start_date)) < 90
     );
-    return !hasApprovedLeave && e.vacationDaysUsed < e.vacationDaysTotal;
+    return !hasApprovedLeave && 0 < 25;
   });
 
-  const totalVacationLeft = employees.reduce((s, e) => s + (e.vacationDaysTotal - e.vacationDaysUsed), 0);
+  const totalVacationLeft = employees.reduce((s, e) => s + (25 - 0), 0);
   const avgVacationLeft = employees.length > 0 ? Math.round(totalVacationLeft / employees.length) : 0;
 
   // Team pulse this week
   const thisWeek = `${now.getFullYear()}-W${String(Math.ceil(((now.getTime() - new Date(now.getFullYear(),0,1).getTime()) / 86400000 + new Date(now.getFullYear(),0,1).getDay() + 1) / 7)).padStart(2,"0")}`;
-  const weekCheckins = checkins.filter(c => c.weekLabel === thisWeek);
+  const weekCheckins = checkins.filter(c => c.week_label === thisWeek);
   const avgEnergy = weekCheckins.length > 0
-    ? Math.round(weekCheckins.reduce((s, c) => s + c.energyLevel, 0) / weekCheckins.length * 10) / 10
+    ? Math.round(weekCheckins.reduce((s, c) => s + c.energy_level, 0) / weekCheckins.length * 10) / 10
     : null;
   const blockers = weekCheckins.filter(c => c.blocker && c.blocker.trim());
 
   // Who's absent today
   const todayStr = format(now, "yyyy-MM-dd");
   const absentToday = leaves.filter(l =>
-    l.startDate <= todayStr && l.endDate >= todayStr && l.status === "approved"
+    l.start_date <= todayStr && l.end_date >= todayStr && l.status === "approved"
   );
 
   const totalHoursThisMonth = Math.round(timeEntries.reduce((s, e) => {
-    if (!e.endTime) return s;
-    const [sh, sm] = e.startTime.split(":").map(Number);
-    const [eh, em] = e.endTime.split(":").map(Number);
-    return s + Math.max(0, (eh * 60 + em) - (sh * 60 + sm) - e.breakMinutes);
+    if (!e.end_time) return s;
+    const [sh, sm] = e.start_time.split(":").map(Number);
+    const [eh, em] = e.end_time.split(":").map(Number);
+    return s + Math.max(0, (eh * 60 + em) - (sh * 60 + sm) - e.break_minutes);
   }, 0) / 60);
 
   return (
@@ -175,9 +190,9 @@ export default function LeadershipDashboard() {
                   const h = Math.round(minutes / 60);
                   const over = Math.round((minutes - TARGET_MIN) / 60);
                   return (
-                    <Link key={emp.$id} href={`/admin/employees/${emp.$id}`}
+                    <Link key={emp.id} href={`/admin/employees/${emp.id}`}
                       className="flex items-center justify-between rounded-lg bg-white px-3 py-2 hover:bg-amber-50 transition">
-                      <span className="text-sm text-gray-900">{emp.firstName} {emp.lastName}</span>
+                      <span className="text-sm text-gray-900">{emp.first_name} {emp.last_name}</span>
                       <span className="text-xs font-medium text-amber-700">{h}h total · +{over}h Überstunden</span>
                     </Link>
                   );
@@ -195,10 +210,10 @@ export default function LeadershipDashboard() {
               </div>
               <div className="space-y-2">
                 {noVacationAlerts.slice(0, 5).map(emp => (
-                  <Link key={emp.$id} href={`/admin/employees/${emp.$id}`}
+                  <Link key={emp.id} href={`/admin/employees/${emp.id}`}
                     className="flex items-center justify-between rounded-lg bg-white px-3 py-2 hover:bg-blue-50 transition">
-                    <span className="text-sm text-gray-900">{emp.firstName} {emp.lastName}</span>
-                    <span className="text-xs text-blue-600">{emp.vacationDaysTotal - emp.vacationDaysUsed} Tage offen</span>
+                    <span className="text-sm text-gray-900">{emp.first_name} {emp.last_name}</span>
+                    <span className="text-xs text-blue-600">{0} Tage offen</span>
                   </Link>
                 ))}
               </div>
@@ -242,7 +257,7 @@ export default function LeadershipDashboard() {
                     <p className="text-xs font-medium text-amber-700 mb-1.5">Blockers im Team ({blockers.length})</p>
                     <div className="space-y-1">
                       {blockers.slice(0, 3).map(c => (
-                        <p key={c.$id} className="text-xs text-amber-600 truncate">· {c.blocker}</p>
+                        <p key={c.id} className="text-xs text-amber-600 truncate">· {c.blocker}</p>
                       ))}
                     </div>
                   </div>
@@ -264,10 +279,10 @@ export default function LeadershipDashboard() {
             ) : (
               <div className="space-y-2">
                 {absentToday.map(l => (
-                  <div key={l.$id} className="flex items-center justify-between">
-                    <span className="text-sm text-gray-700">{l.employeeName}</span>
-                    <span className={`text-xs rounded-full px-2 py-0.5 ${l.type === "vacation" ? "bg-[#4F772D]/10 text-[#4F772D]" : "bg-red-100 text-red-600"}`}>
-                      {l.type === "vacation" ? "Urlaub" : l.type === "sick" ? "Krank" : "Abwesend"}
+                  <div key={l.id} className="flex items-center justify-between">
+                    <span className="text-sm text-gray-700">{l.employees ? `${l.employees.first_name} ${l.employees.last_name}` : "—"}</span>
+                    <span className={`text-xs rounded-full px-2 py-0.5 ${l.absence_type_id !== "" ? "bg-[#4F772D]/10 text-[#4F772D]" : "bg-red-100 text-red-600"}`}>
+                      {l.absence_type_id !== "" ? "Urlaub" : false ? "Krank" : "Abwesend"}
                     </span>
                   </div>
                 ))}

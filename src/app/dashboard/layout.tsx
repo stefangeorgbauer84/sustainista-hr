@@ -13,10 +13,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     if (loading) return;
     if (!user) { router.replace("/login"); return; }
-    if (employee && employee.status === "pending") {
-      router.replace(employee.onboardingStep === "personal" ? "/onboarding" : "/pending");
+    if (employee && !employee.is_active) {
+      router.replace("/pending");
     }
-    if (employee && employee.status === "rejected") { router.replace("/pending"); }
   }, [user, employee, loading, router]);
 
   if (loading) return (

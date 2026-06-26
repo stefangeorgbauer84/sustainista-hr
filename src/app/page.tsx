@@ -13,15 +13,7 @@ export default function Home() {
     if (!user) { router.replace("/login"); return; }
     if (isAdminUser) { router.replace("/admin"); return; }
     if (!employee) { router.replace("/login"); return; }
-    if (employee.status === "pending") {
-      if (!employee.onboardingStep || employee.onboardingStep === "personal") {
-        router.replace("/onboarding");
-      } else {
-        router.replace("/pending");
-      }
-      return;
-    }
-    if (employee.status === "rejected") { router.replace("/pending"); return; }
+    if (!employee.is_active) { router.replace("/onboarding"); return; }
     router.replace("/dashboard");
   }, [user, employee, isAdminUser, loading, router]);
 

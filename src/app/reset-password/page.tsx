@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { account } from "@/lib/appwrite";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -21,9 +21,6 @@ type FormData = z.infer<typeof schema>;
 
 function ResetForm() {
   const router = useRouter();
-  const params = useSearchParams();
-  const userId = params.get("userId") ?? "";
-  const secret = params.get("secret") ?? "";
   const [loading, setLoading] = useState(false);
 
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
@@ -31,13 +28,12 @@ function ResetForm() {
   });
 
   async function onSubmit(data: FormData) {
-    if (!userId || !secret) {
-      toast.error("Ungültiger Reset-Link");
-      return;
-    }
     setLoading(true);
     try {
-      await account.updateRecovery(userId, secret, data.password);
+      // Supabase handles the token from the URL hash automatically via the auth listener.
+      // updateUser works once the session is established from the recovery link.
+      const { error } = await supabase.auth.updateUser({ password: data.password });
+      if (error) throw error;
       toast.success("Passwort erfolgreich geändert!");
       router.replace("/login");
     } catch {

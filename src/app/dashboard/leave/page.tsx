@@ -2,9 +2,12 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getLeaveRequestsForEmployee, createLeaveRequest, calcBusinessDays } from "@/lib/leave";
-import { storage, BUCKETS } from "@/lib/appwrite";
-import { ID } from "appwrite";
+import {
+  getAbsencesForEmployee, createAbsence, getAbsenceTypes,
+  calcBusinessDays, getHolidaysForYear,
+} from "@/lib/leave";
+import { supabase } from "@/lib/supabase";
+import type { Absence, AbsenceType, LeaveBalance } from "@/types";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -15,7 +18,7 @@ import { Calendar, Plus, X, Upload, Download } from "lucide-react";
 import { useState, useRef } from "react";
 
 const schema = z.object({
-  type: z.enum(["vacation", "sick", "unpaid", "special"]),
+  absence_type_id: z.string().min(1, "Art der Abwesenheit erforderlich"),
   startDate: z.string().min(1, "Startdatum erforderlich"),
   endDate: z.string().min(1, "Enddatum erforderlich"),
   reason: z.string().optional(),
@@ -23,23 +26,18 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
-const typeLabels: Record<string, string> = {
-  vacation: "Urlaub",
-  sick: "Krankenstand",
-  unpaid: "Unbezahlter Urlaub",
-  special: "Sonderurlaub",
-};
-
 const statusColors: Record<string, string> = {
-  pending: "bg-amber-100 text-amber-700",
+  requested: "bg-amber-100 text-amber-700",
   approved: "bg-green-100 text-green-700",
   rejected: "bg-red-100 text-red-600",
+  cancelled: "bg-gray-100 text-gray-500",
 };
 
 const statusLabels: Record<string, string> = {
-  pending: "Ausstehend",
+  requested: "Ausstehend",
   approved: "Genehmigt",
   rejected: "Abgelehnt",
+  cancelled: "Storniert",
 };
 
 export default function LeavePage() {
@@ -48,47 +46,82 @@ export default function LeavePage() {
   const [showForm, setShowForm] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const currentYear = new Date().getFullYear();
 
-  const { data: leaves = [], isLoading } = useQuery({
-    queryKey: ["leaves", employee?.$id],
-    queryFn: () => getLeaveRequestsForEmployee(employee!.$id),
+  const { data: absenceTypes = [] } = useQuery<AbsenceType[]>({
+    queryKey: ["absence-types"],
+    queryFn: getAbsenceTypes,
+  });
+
+  const { data: holidays = [] } = useQuery<string[]>({
+    queryKey: ["holidays", currentYear],
+    queryFn: () => getHolidaysForYear(currentYear),
+  });
+
+  const { data: leaveBalance } = useQuery<LeaveBalance | null>({
+    queryKey: ["leave-balance", employee?.id, currentYear],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("leave_balances")
+        .select("*")
+        .eq("employee_id", employee!.id)
+        .eq("year", currentYear)
+        .single();
+      return data ?? null;
+    },
+    enabled: !!employee,
+  });
+
+  const { data: absences = [], isLoading } = useQuery<Absence[]>({
+    queryKey: ["absences", employee?.id],
+    queryFn: () => getAbsencesForEmployee(employee!.id),
     enabled: !!employee,
   });
 
   const { register, handleSubmit, watch, reset, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { type: "vacation" },
+    defaultValues: { absence_type_id: "" },
   });
 
-  const watchType = watch("type");
+  const watchTypeId = watch("absence_type_id");
   const startDate = watch("startDate");
   const endDate = watch("endDate");
   const previewDays = startDate && endDate && endDate >= startDate
-    ? calcBusinessDays(startDate, endDate)
+    ? calcBusinessDays(startDate, endDate, holidays)
     : 0;
 
-  const vacationLeft = (employee?.vacationDaysTotal ?? 25) - (employee?.vacationDaysUsed ?? 0);
+  const selectedType = absenceTypes.find(t => t.id === watchTypeId);
+  const entitlement = leaveBalance?.entitlement_days ?? 25;
+  const taken = leaveBalance?.taken_days ?? 0;
+  const vacationLeft = entitlement - taken;
 
   const mutation = useMutation({
     mutationFn: async (data: FormData) => {
-      let sickNoteFileId: string | undefined;
+      let doctorNotePath: string | undefined;
 
-      // Krankenzettel hochladen falls vorhanden
-      if (data.type === "sick" && fileRef.current?.files?.[0]) {
+      if (selectedType?.requires_doc && fileRef.current?.files?.[0]) {
         setUploading(true);
         const file = fileRef.current.files[0];
-        const uploaded = await storage.createFile(BUCKETS.DOCUMENTS, ID.unique(), file);
-        sickNoteFileId = uploaded.$id;
+        const ext = file.name.split(".").pop();
+        const path = `sick-notes/${employee!.id}/${Date.now()}.${ext}`;
+        const { error } = await supabase.storage.from("documents").upload(path, file);
+        if (error) throw error;
+        doctorNotePath = path;
         setUploading(false);
       }
 
-      return createLeaveRequest(employee!.$id, `${employee!.firstName} ${employee!.lastName}`, {
-        ...data,
-        sickNote: sickNoteFileId,
+      return createAbsence({
+        absence_type_id: data.absence_type_id,
+        start_date: data.startDate,
+        end_date: data.endDate,
+        reason: data.reason,
+        working_days: previewDays,
+        ...(doctorNotePath ? { doctor_note: doctorNotePath } : {}),
       });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["leaves"] });
+      qc.invalidateQueries({ queryKey: ["absences"] });
+      qc.invalidateQueries({ queryKey: ["leave-balance"] });
       toast.success("Antrag eingereicht");
       reset();
       setShowForm(false);
@@ -96,8 +129,9 @@ export default function LeavePage() {
     onError: () => { setUploading(false); toast.error("Fehler beim Einreichen"); },
   });
 
-  function downloadUrl(fileId: string) {
-    return `https://cloud.appwrite.io/v1/storage/buckets/${BUCKETS.DOCUMENTS}/files/${fileId}/download?project=6a2567ad0021c84890d1`;
+  function downloadUrl(storagePath: string) {
+    const { data } = supabase.storage.from("documents").getPublicUrl(storagePath);
+    return data.publicUrl;
   }
 
   return (
@@ -106,7 +140,7 @@ export default function LeavePage() {
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Urlaub & Abwesenheit</h1>
           <p className="mt-0.5 text-sm text-gray-500">
-            {vacationLeft} von {employee?.vacationDaysTotal ?? 25} Urlaubstagen verbleibend
+            {vacationLeft} von {entitlement} Urlaubstagen verbleibend
           </p>
         </div>
         <button
@@ -121,13 +155,13 @@ export default function LeavePage() {
       {/* Fortschrittsbalken Urlaub */}
       <div>
         <div className="mb-1.5 flex justify-between text-xs text-gray-500">
-          <span>{employee?.vacationDaysUsed ?? 0} verbraucht</span>
+          <span>{taken} verbraucht</span>
           <span>{vacationLeft} verbleibend</span>
         </div>
         <div className="h-2.5 rounded-full bg-gray-200">
           <div
             className="h-2.5 rounded-full bg-[#4F772D] transition-all"
-            style={{ width: `${Math.min(100, ((employee?.vacationDaysUsed ?? 0) / (employee?.vacationDaysTotal ?? 25)) * 100)}%` }}
+            style={{ width: `${Math.min(100, (taken / entitlement) * 100)}%` }}
           />
         </div>
       </div>
@@ -138,14 +172,16 @@ export default function LeavePage() {
           <form onSubmit={handleSubmit(d => mutation.mutate(d))} className="space-y-4">
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-700">Art der Abwesenheit</label>
-              <select {...register("type")} className={inp}>
-                {Object.entries(typeLabels).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
+              <select {...register("absence_type_id")} className={inp}>
+                <option value="">Auswählen…</option>
+                {absenceTypes.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
               </select>
+              {errors.absence_type_id && <p className="mt-1 text-xs text-red-500">{errors.absence_type_id.message}</p>}
             </div>
 
-            {watchType === "vacation" && vacationLeft <= 5 && (
+            {selectedType?.counts_as_leave && vacationLeft <= 5 && (
               <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
                 Hinweis: Du hast noch {vacationLeft} Urlaubstage verbleibend.
               </div>
@@ -167,16 +203,16 @@ export default function LeavePage() {
             {previewDays > 0 && (
               <p className="text-xs text-gray-500">
                 Das sind <strong>{previewDays} Werktage</strong> (österreichische Feiertage ausgenommen)
-                {watchType === "vacation" && previewDays > vacationLeft && (
+                {selectedType?.counts_as_leave && previewDays > vacationLeft && (
                   <span className="ml-2 text-red-500 font-medium">— nicht genug Urlaubstage!</span>
                 )}
               </p>
             )}
 
-            {watchType === "sick" && (
+            {selectedType?.requires_doc && (
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-700">
-                  Krankenzettel hochladen (optional, PDF)
+                  Nachweis hochladen (optional, PDF)
                 </label>
                 <div className="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 p-3">
                   <Upload className="h-4 w-4 text-gray-400" strokeWidth={1.5} />
@@ -217,38 +253,41 @@ export default function LeavePage() {
         <div className="divide-y divide-gray-50">
           {isLoading ? (
             <p className="px-5 py-8 text-center text-sm text-gray-400">Wird geladen…</p>
-          ) : leaves.length === 0 ? (
+          ) : absences.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-gray-400">Noch keine Anträge</p>
           ) : (
-            leaves.map(leave => (
-              <div key={leave.$id} className="flex items-center justify-between px-5 py-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-gray-900">{typeLabels[leave.type]}</p>
-                    {leave.sickNote && (
-                      <a
-                        href={downloadUrl(leave.sickNote)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center gap-1 text-[10px] text-[#4F772D] hover:underline"
-                      >
-                        <Download className="h-3 w-3" strokeWidth={1.5} />
-                        Nachweis
-                      </a>
-                    )}
+            absences.map(absence => {
+              const type = absenceTypes.find(t => t.id === absence.absence_type_id);
+              return (
+                <div key={absence.id} className="flex items-center justify-between px-5 py-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-gray-900">{type?.name ?? "Abwesenheit"}</p>
+                      {absence.doctor_note && (
+                        <a
+                          href={downloadUrl(absence.doctor_note)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1 text-[10px] text-[#4F772D] hover:underline"
+                        >
+                          <Download className="h-3 w-3" strokeWidth={1.5} />
+                          Nachweis
+                        </a>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400">
+                      {format(parseISO(absence.start_date), "d. MMM", { locale: de })} –{" "}
+                      {format(parseISO(absence.end_date), "d. MMM yyyy", { locale: de })}
+                      {absence.working_days != null && ` · ${absence.working_days} Werktage`}
+                    </p>
+                    {absence.reason && <p className="text-xs text-gray-400 italic">{absence.reason}</p>}
                   </div>
-                  <p className="text-xs text-gray-400">
-                    {format(parseISO(leave.startDate), "d. MMM", { locale: de })} –{" "}
-                    {format(parseISO(leave.endDate), "d. MMM yyyy", { locale: de })}
-                    {" · "}{leave.days} Werktage
-                  </p>
-                  {leave.reason && <p className="text-xs text-gray-400 italic">{leave.reason}</p>}
+                  <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${statusColors[absence.status] ?? "bg-gray-100 text-gray-500"}`}>
+                    {statusLabels[absence.status] ?? absence.status}
+                  </span>
                 </div>
-                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${statusColors[leave.status]}`}>
-                  {statusLabels[leave.status]}
-                </span>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>

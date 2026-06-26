@@ -3,14 +3,27 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { databases, DB_ID } from "@/lib/appwrite";
-import { PERF_COLLECTIONS, currentPeriod } from "@/app/lib/collections";
-import { Query } from "appwrite";
-import type { PerformanceReview } from "@/types";
+import { supabase } from "@/lib/supabase";
+import { currentPeriod } from "@/app/lib/collections";
 import { toast } from "sonner";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
 import { ClipboardList, Star, CheckCircle, Clock } from "lucide-react";
+
+type ReviewRow = {
+  id: string;
+  employee_id: string;
+  period: string;
+  self_assessment: string | null;
+  manager_assessment: string | null;
+  self_score: number | null;
+  manager_score: number | null;
+  strengths: string | null;
+  growth_areas: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
 
 const SCORE_LABELS = ["", "Unter Erwartungen", "Entwicklungsbedarf", "Erfüllt Erwartungen", "Übertrifft Erwartungen", "Exzellent"];
 
@@ -31,15 +44,17 @@ export default function ReviewPage() {
   const [selfText, setSelfText] = useState("");
   const [score, setScore] = useState(0);
 
-  const { data: reviews = [] } = useQuery<PerformanceReview[]>({
-    queryKey: ["my-reviews", employee?.$id],
+  const { data: reviews = [] } = useQuery<ReviewRow[]>({
+    queryKey: ["my-reviews", employee?.id],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, PERF_COLLECTIONS.REVIEWS, [
-        Query.equal("employeeId", employee!.$id),
-        Query.orderDesc("$createdAt"),
-        Query.limit(10),
-      ]);
-      return res.documents as unknown as PerformanceReview[];
+      const { data, error } = await supabase
+        .from("performance_reviews")
+        .select("*")
+        .eq("employee_id", employee!.id)
+        .order("created_at", { ascending: false })
+        .limit(10);
+      if (error) throw error;
+      return (data ?? []) as ReviewRow[];
     },
     enabled: !!employee,
   });
@@ -47,19 +62,19 @@ export default function ReviewPage() {
   const currentReview = reviews.find(r => r.period === period);
 
   useEffect(() => {
-    if (currentReview?.selfAssessment) setSelfText(currentReview.selfAssessment);
-    if (currentReview?.selfScore) setScore(currentReview.selfScore);
+    if (currentReview?.self_assessment) setSelfText(currentReview.self_assessment);
+    if (currentReview?.self_score) setScore(currentReview.self_score);
   }, [currentReview]);
 
   const submitMutation = useMutation({
     mutationFn: async () => {
       if (!currentReview) throw new Error("Kein Review offen");
       if (!selfText.trim() || score === 0) throw new Error("Bitte Einschätzung und Bewertung ausfüllen");
-      return databases.updateDocument(DB_ID, PERF_COLLECTIONS.REVIEWS, currentReview.$id, {
-        selfAssessment: selfText.trim(),
-        selfScore: score,
-        status: "manager-pending",
-      });
+      const { error } = await supabase
+        .from("performance_reviews")
+        .update({ self_assessment: selfText.trim(), self_score: score, status: "manager-pending" })
+        .eq("id", currentReview.id);
+      if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["my-reviews"] });
@@ -86,12 +101,10 @@ export default function ReviewPage() {
           <div className="rounded-xl bg-[#4F772D]/5 border border-[#4F772D]/10 px-5 py-4">
             <p className="text-sm font-semibold text-[#4F772D] mb-2">Deine Selbstreflexion — {period}</p>
             <p className="text-xs text-gray-600 leading-relaxed">
-              Nimm dir 15–20 Minuten. Sei ehrlich mit dir selbst — das Gespräch soll ein echter Dialog werden, kein Bericht.
-              Starke Einschätzungen nennen konkrete Beispiele.
+              Nimm dir 15–20 Minuten. Sei ehrlich mit dir selbst. Starke Einschätzungen nennen konkrete Beispiele.
             </p>
           </div>
 
-          {/* Reflection prompts */}
           <div className="rounded-xl border border-gray-200 bg-white p-5">
             <p className="mb-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Denkanstöße</p>
             <div className="space-y-2">
@@ -104,43 +117,29 @@ export default function ReviewPage() {
             </div>
           </div>
 
-          {/* Self-assessment form */}
           <div className="rounded-xl border border-gray-200 bg-white p-6 space-y-4">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-700">Meine Selbsteinschätzung</label>
-              <textarea
-                rows={8}
-                className={inp}
+              <textarea rows={8} className={inp}
                 placeholder="Schreibe frei. Was lief gut, was würdest du anders machen, wie hast du dich entwickelt?"
-                value={selfText}
-                onChange={e => setSelfText(e.target.value)}
-              />
+                value={selfText} onChange={e => setSelfText(e.target.value)} />
             </div>
-
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700">Wie bewertest du deine eigene Leistung?</label>
               <div className="flex gap-2">
                 {[1,2,3,4,5].map(n => (
-                  <button
-                    key={n}
-                    onClick={() => setScore(n)}
-                    title={SCORE_LABELS[n]}
+                  <button key={n} onClick={() => setScore(n)} title={SCORE_LABELS[n]}
                     className={`flex flex-1 flex-col items-center gap-1 rounded-xl border-2 py-3 transition ${
                       score >= n ? "border-[#4F772D] bg-[#4F772D]/5" : "border-gray-200 hover:border-gray-300"
-                    }`}
-                  >
+                    }`}>
                     <Star className={`h-5 w-5 ${score >= n ? "text-[#4F772D]" : "text-gray-300"}`} strokeWidth={1.5} fill={score >= n ? "currentColor" : "none"} />
                     <span className="text-[9px] text-center text-gray-500 leading-tight px-1">{SCORE_LABELS[n]}</span>
                   </button>
                 ))}
               </div>
             </div>
-
-            <button
-              onClick={() => submitMutation.mutate()}
-              disabled={!selfText.trim() || score === 0 || submitMutation.isPending}
-              className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#4F772D] py-2.5 text-sm font-medium text-white hover:bg-[#31572C] disabled:opacity-60"
-            >
+            <button onClick={() => submitMutation.mutate()} disabled={!selfText.trim() || score === 0 || submitMutation.isPending}
+              className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#4F772D] py-2.5 text-sm font-medium text-white hover:bg-[#31572C] disabled:opacity-60">
               <CheckCircle className="h-4 w-4" strokeWidth={1.5} />
               {submitMutation.isPending ? "Wird eingereicht…" : "Einschätzung einreichen"}
             </button>
@@ -151,27 +150,28 @@ export default function ReviewPage() {
           <div className="flex items-center gap-2 text-[#4F772D]">
             <CheckCircle className="h-5 w-5" strokeWidth={1.5} />
             <p className="text-sm font-medium">
-              {currentReview.status === "manager-pending" ? "Selbsteinschätzung eingereicht — deine Führungskraft bearbeitet jetzt den Review" : "Review abgeschlossen"}
+              {currentReview.status === "manager-pending"
+                ? "Selbsteinschätzung eingereicht — deine Führungskraft bearbeitet jetzt den Review"
+                : "Review abgeschlossen"}
             </p>
           </div>
-
-          <div className="rounded-lg bg-gray-50 p-4">
-            <p className="text-xs font-semibold text-gray-500 mb-2">Deine Selbsteinschätzung</p>
-            <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{currentReview.selfAssessment}</p>
-          </div>
-
-          {currentReview.status === "complete" && currentReview.managerAssessment && (
+          {currentReview.self_assessment && (
+            <div className="rounded-lg bg-gray-50 p-4">
+              <p className="text-xs font-semibold text-gray-500 mb-2">Deine Selbsteinschätzung</p>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{currentReview.self_assessment}</p>
+            </div>
+          )}
+          {currentReview.status === "complete" && currentReview.manager_assessment && (
             <div className="rounded-lg bg-[#4F772D]/5 border border-[#4F772D]/10 p-4">
               <p className="text-xs font-semibold text-[#4F772D] mb-2">Beurteilung deiner Führungskraft</p>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{currentReview.managerAssessment}</p>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{currentReview.manager_assessment}</p>
               {currentReview.strengths && <div className="mt-3"><p className="text-xs font-medium text-green-700">Stärken</p><p className="text-xs text-gray-600 mt-1">{currentReview.strengths}</p></div>}
-              {currentReview.growthAreas && <div className="mt-2"><p className="text-xs font-medium text-blue-700">Entwicklungsfelder</p><p className="text-xs text-gray-600 mt-1">{currentReview.growthAreas}</p></div>}
+              {currentReview.growth_areas && <div className="mt-2"><p className="text-xs font-medium text-blue-700">Entwicklungsfelder</p><p className="text-xs text-gray-600 mt-1">{currentReview.growth_areas}</p></div>}
             </div>
           )}
         </div>
       )}
 
-      {/* History */}
       {reviews.filter(r => r.period !== period && r.status === "complete").length > 0 && (
         <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
           <div className="border-b border-gray-100 px-5 py-4 flex items-center gap-2">
@@ -180,18 +180,19 @@ export default function ReviewPage() {
           </div>
           <div className="divide-y divide-gray-50">
             {reviews.filter(r => r.period !== period && r.status === "complete").map(r => (
-              <div key={r.$id} className="flex items-center gap-4 px-5 py-3">
+              <div key={r.id} className="flex items-center gap-4 px-5 py-3">
                 <span className="text-xs font-mono text-gray-500">{r.period}</span>
                 <div className="flex-1">
-                  {r.managerScore && (
+                  {r.manager_score && (
                     <div className="flex items-center gap-1">
                       {[1,2,3,4,5].map(n => (
-                        <Star key={n} className={`h-3 w-3 ${n <= r.managerScore! ? "text-[#4F772D]" : "text-gray-200"}`} fill={n <= r.managerScore! ? "currentColor" : "none"} strokeWidth={1} />
+                        <Star key={n} className={`h-3 w-3 ${n <= r.manager_score! ? "text-[#4F772D]" : "text-gray-200"}`}
+                          fill={n <= r.manager_score! ? "currentColor" : "none"} strokeWidth={1} />
                       ))}
                     </div>
                   )}
                 </div>
-                <span className="text-xs text-gray-400">{format(parseISO(r.$updatedAt), "MMM yyyy", { locale: de })}</span>
+                <span className="text-xs text-gray-400">{format(parseISO(r.updated_at), "MMM yyyy", { locale: de })}</span>
               </div>
             ))}
           </div>

@@ -2,9 +2,8 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { useQuery } from "@tanstack/react-query";
-import { databases, DB_ID, COLLECTIONS } from "@/lib/appwrite";
-import { Query } from "appwrite";
-import type { TimeEntry } from "@/types";
+import { supabase } from "@/lib/supabase";
+import type { TimeRecord } from "@/types";
 import { calcWorkedMinutes, formatDuration } from "@/lib/time";
 import { isHoliday } from "@/lib/holidays";
 import { format, getDaysInMonth, isWeekend } from "date-fns";
@@ -35,44 +34,43 @@ export default function ZeitkontoPage() {
   const { employee } = useAuth();
   const now = new Date();
 
-  // Letzten 6 Monate holen
   const months: { year: number; month: number }[] = [];
   for (let i = 5; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     months.push({ year: d.getFullYear(), month: d.getMonth() + 1 });
   }
 
-  const { data: allEntries = [], isLoading } = useQuery<TimeEntry[]>({
-    queryKey: ["zeitkonto", employee?.$id],
+  const sixMonthsAgo = format(new Date(now.getFullYear(), now.getMonth() - 5, 1), "yyyy-MM-dd");
+
+  const { data: allRecords = [], isLoading } = useQuery<TimeRecord[]>({
+    queryKey: ["zeitkonto", employee?.id],
     queryFn: async () => {
-      const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
-      const res = await databases.listDocuments(DB_ID, COLLECTIONS.TIME_ENTRIES, [
-        Query.equal("employeeId", employee!.$id),
-        Query.greaterThanEqual("date", format(sixMonthsAgo, "yyyy-MM-dd")),
-        Query.notEqual("status", "running"),
-        Query.limit(500),
-      ]);
-      return res.documents as unknown as TimeEntry[];
+      const { data, error } = await supabase
+        .from("time_records")
+        .select("*")
+        .eq("employee_id", employee!.id)
+        .gte("work_date", sixMonthsAgo)
+        .not("end_time", "is", null)
+        .limit(500);
+      if (error) throw error;
+      return (data ?? []) as TimeRecord[];
     },
     enabled: !!employee,
   });
 
   const summaries: MonthSummary[] = months.map(({ year, month }) => {
     const prefix = `${year}-${String(month).padStart(2, "0")}`;
-    const entries = allEntries.filter(e => e.date.startsWith(prefix));
+    const entries = allRecords.filter(e => e.work_date.startsWith(prefix));
     const actual = entries.reduce((s, e) => s + calcWorkedMinutes(e), 0);
     const target = getTargetMinutes(year, month);
     return {
       year, month,
       label: format(new Date(year, month - 1), "MMM yyyy", { locale: de }),
-      actual,
-      target,
-      diff: actual - target,
+      actual, target, diff: actual - target,
     };
   });
 
   const totalDiff = summaries.reduce((s, m) => s + m.diff, 0);
-  const currentMonth = summaries[summaries.length - 1];
 
   return (
     <div className="space-y-6">
@@ -81,7 +79,6 @@ export default function ZeitkontoPage() {
         <p className="mt-0.5 text-sm text-gray-500">Überstunden-Saldo der letzten 6 Monate</p>
       </div>
 
-      {/* Gesamtsaldo */}
       <div className={`rounded-2xl border p-6 ${totalDiff > 0 ? "border-[#4F772D]/30 bg-[#4F772D]/5" : totalDiff < -60 * 60 ? "border-red-200 bg-red-50" : "border-gray-200 bg-white"}`}>
         <div className="flex items-center justify-between">
           <div>
@@ -99,17 +96,15 @@ export default function ZeitkontoPage() {
              <Minus className="h-8 w-8 text-gray-400" strokeWidth={1.5} />}
           </div>
         </div>
-
         {totalDiff > 2 * 8 * 60 && (
           <div className="mt-4 rounded-lg border border-[#4F772D]/20 bg-white/60 px-4 py-3">
             <p className="text-xs text-[#4F772D] font-medium">
-              Tipp: Du hast {formatDuration(totalDiff)} Überstunden. Das entspricht {Math.floor(totalDiff / (8 * 60))} Tagen Zeitausgleich.
+              Tipp: {formatDuration(totalDiff)} Überstunden = {Math.floor(totalDiff / (8 * 60))} Tage Zeitausgleich.
             </p>
           </div>
         )}
       </div>
 
-      {/* Monat für Monat */}
       <div className="rounded-xl border border-gray-200 bg-white">
         <div className="border-b border-gray-100 px-5 py-4 flex items-center gap-2">
           <Clock className="h-4 w-4 text-gray-400" strokeWidth={1.5} />
@@ -123,30 +118,23 @@ export default function ZeitkontoPage() {
             const targetH = (m.target / 60).toFixed(0);
             const actualH = (m.actual / 60).toFixed(1);
             const pct = m.target > 0 ? Math.min(120, Math.round((m.actual / m.target) * 100)) : 0;
-
             return (
               <div key={`${m.year}-${m.month}`} className={`px-5 py-4 ${isCurrentMonth ? "bg-[#4F772D]/5" : ""}`}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-medium text-gray-900">{m.label}</p>
                     {isCurrentMonth && (
-                      <span className="rounded-full bg-[#4F772D]/10 px-2 py-0.5 text-[10px] font-medium text-[#4F772D]">
-                        Laufend
-                      </span>
+                      <span className="rounded-full bg-[#4F772D]/10 px-2 py-0.5 text-[10px] font-medium text-[#4F772D]">Laufend</span>
                     )}
                   </div>
-                  <div className="text-right">
-                    <span className={`text-sm font-semibold ${m.diff > 0 ? "text-[#4F772D]" : m.diff < -60 * 60 ? "text-red-500" : "text-gray-600"}`}>
-                      {m.diff >= 0 ? "+" : ""}{formatDuration(Math.abs(m.diff))}
-                    </span>
-                  </div>
+                  <span className={`text-sm font-semibold ${m.diff > 0 ? "text-[#4F772D]" : m.diff < -60 * 60 ? "text-red-500" : "text-gray-600"}`}>
+                    {m.diff >= 0 ? "+" : ""}{formatDuration(Math.abs(m.diff))}
+                  </span>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="flex-1 h-2 rounded-full bg-gray-200 overflow-hidden">
-                    <div
-                      className={`h-2 rounded-full transition-all ${pct > 100 ? "bg-amber-400" : pct < 80 ? "bg-red-300" : "bg-[#4F772D]"}`}
-                      style={{ width: `${Math.min(100, pct)}%` }}
-                    />
+                    <div className={`h-2 rounded-full transition-all ${pct > 100 ? "bg-amber-400" : pct < 80 ? "bg-red-300" : "bg-[#4F772D]"}`}
+                      style={{ width: `${Math.min(100, pct)}%` }} />
                   </div>
                   <span className="text-xs text-gray-400 shrink-0">{actualH}h / {targetH}h Soll</span>
                 </div>

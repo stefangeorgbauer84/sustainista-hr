@@ -3,14 +3,22 @@
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { databases, DB_ID } from "@/lib/appwrite";
+import { supabase } from "@/lib/supabase";
 import { PERF_COLLECTIONS, currentWeekLabel } from "@/app/lib/collections";
-import { Query, ID } from "appwrite";
-import type { Win } from "@/types";
 import { toast } from "sonner";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
 import { Trophy, Plus, X, Sparkles, Tag, Zap } from "lucide-react";
+
+interface Win {
+  id: string;
+  employee_id: string;
+  week_label: string;
+  content: string;
+  impact: string | null;
+  tags: string | null;
+  created_at: string;
+}
 
 const IMPACT_OPTIONS = [
   { value: "Kunde", label: "Kunde begeistert", color: "bg-blue-100 text-blue-700" },
@@ -34,14 +42,16 @@ export default function WinsPage() {
   const weekLabel = currentWeekLabel();
 
   const { data: wins = [], isLoading } = useQuery<Win[]>({
-    queryKey: ["wins", employee?.$id],
+    queryKey: ["wins", employee?.id],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, PERF_COLLECTIONS.WINS, [
-        Query.equal("employeeId", employee!.$id),
-        Query.orderDesc("$createdAt"),
-        Query.limit(100),
-      ]);
-      return res.documents as unknown as Win[];
+      const { data, error } = await supabase
+        .from(PERF_COLLECTIONS.WINS)
+        .select("*")
+        .eq("employee_id", employee!.id)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return data ?? [];
     },
     enabled: !!employee,
   });
@@ -49,13 +59,14 @@ export default function WinsPage() {
   const addMutation = useMutation({
     mutationFn: async () => {
       if (!content.trim()) throw new Error("Pflichtfeld");
-      return databases.createDocument(DB_ID, PERF_COLLECTIONS.WINS, ID.unique(), {
-        employeeId: employee!.$id,
-        weekLabel,
+      const { error } = await supabase.from(PERF_COLLECTIONS.WINS).insert({
+        employee_id: employee!.id,
+        week_label: weekLabel,
         content: content.trim(),
         impact: impact || null,
         tags: tags.join(",") || null,
       });
+      if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["wins"] });
@@ -69,10 +80,10 @@ export default function WinsPage() {
     setTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   }
 
-  // Group by weekLabel
+  // Group by week_label
   const grouped = wins.reduce<Record<string, Win[]>>((acc, w) => {
-    if (!acc[w.weekLabel]) acc[w.weekLabel] = [];
-    acc[w.weekLabel].push(w);
+    if (!acc[w.week_label]) acc[w.week_label] = [];
+    acc[w.week_label].push(w);
     return acc;
   }, {});
 
@@ -197,7 +208,7 @@ export default function WinsPage() {
               </div>
               <div className="divide-y divide-gray-50">
                 {weekWins.map(win => (
-                  <div key={win.$id} className="px-5 py-4">
+                  <div key={win.id} className="px-5 py-4">
                     <div className="flex items-start gap-3">
                       <div className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-[#4F772D]/10">
                         <Zap className="h-3 w-3 text-[#4F772D]" strokeWidth={2} />
@@ -217,7 +228,7 @@ export default function WinsPage() {
                           ))}
                         </div>
                         <p className="mt-1.5 text-[11px] text-gray-400">
-                          {format(parseISO(win.$createdAt), "EEE, d. MMM yyyy", { locale: de })}
+                          {format(parseISO(win.created_at), "EEE, d. MMM yyyy", { locale: de })}
                         </p>
                       </div>
                     </div>

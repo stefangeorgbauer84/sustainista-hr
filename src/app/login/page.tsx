@@ -59,12 +59,10 @@ function LoginForm() {
     setLoading(true);
     try {
       await login(data.email, data.password);
-      await refresh();
       toast.success("Willkommen zurück!");
-      router.replace(isAdminUser ? "/admin" : "/dashboard");
+      window.location.href = "/dashboard";
     } catch {
       toast.error("Login fehlgeschlagen. Bitte E-Mail und Passwort prüfen.");
-    } finally {
       setLoading(false);
     }
   }
@@ -141,9 +139,10 @@ function LoginForm() {
           {/* Email/Password Form */}
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">E-Mail</label>
+              <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-gray-700">E-Mail</label>
               <input
                 {...register("email")}
+                id="email"
                 type="email"
                 autoComplete="email"
                 className="w-full rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm outline-none focus:border-[#4F772D] focus:ring-2 focus:ring-[#4F772D]/20"
@@ -153,9 +152,10 @@ function LoginForm() {
             </div>
 
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">Passwort</label>
+              <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-gray-700">Passwort</label>
               <input
                 {...register("password")}
+                id="password"
                 type="password"
                 autoComplete="current-password"
                 className="w-full rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm outline-none focus:border-[#4F772D] focus:ring-2 focus:ring-[#4F772D]/20"
@@ -169,7 +169,11 @@ function LoginForm() {
               disabled={loading || oauthLoading !== null}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#4F772D] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[#31572C] disabled:opacity-60"
             >
-              <LogIn className="h-4 w-4" strokeWidth={1.5} />
+              {loading ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              ) : (
+                <LogIn className="h-4 w-4" strokeWidth={1.5} />
+              )}
               {loading ? "Wird angemeldet…" : "Anmelden"}
             </button>
           </form>

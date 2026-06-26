@@ -1,41 +1,32 @@
-import { NextRequest, NextResponse } from "next/server";
-import { Client, Messaging } from "node-appwrite";
+import { createServerSupabase } from "@/lib/supabase-server"
+import { NextResponse } from "next/server"
 
-const serverClient = new Client()
-  .setEndpoint("https://cloud.appwrite.io/v1")
-  .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID!)
-  .setKey(process.env.APPWRITE_API_KEY!);
+export async function POST(request: Request) {
+  const { user_id, title, body, type, action_url } = await request.json()
+  const supabase = await createServerSupabase()
 
-const messaging = new Messaging(serverClient);
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-export async function POST(req: NextRequest) {
-  const { to, subject, body } = await req.json() as {
-    to: string[];
-    subject: string;
-    body: string;
-  };
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("company_id, role")
+    .eq("id", user.id)
+    .single()
 
-  if (!to?.length || !subject || !body) {
-    return NextResponse.json({ error: "Missing params" }, { status: 400 });
+  if (!profile || !["hr_manager", "hr_staff", "company_admin", "super_admin"].includes(profile.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
-  try {
-    await messaging.createEmail(
-      "unique()",
-      subject,
-      body,
-      [],    // topics
-      to,    // userIds
-      [],    // targets
-      [],    // cc
-      [],    // bcc
-      [],    // attachments
-      false, // draft
-      true   // html
-    );
-    return NextResponse.json({ ok: true });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : "Unknown error";
-    return NextResponse.json({ error: msg }, { status: 500 });
-  }
+  const { error } = await supabase.from("notifications").insert({
+    company_id: profile.company_id,
+    user_id,
+    type: type ?? "info",
+    title,
+    body: body ?? null,
+    action_url: action_url ?? null,
+  })
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ success: true })
 }

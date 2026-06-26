@@ -1,10 +1,9 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { databases, DB_ID, COLLECTIONS } from "@/lib/appwrite";
-import { Query } from "appwrite";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
-import type { Employee, TimeEntry } from "@/types";
+import type { Employee, TimeRecord } from "@/types";
 import { calcWorkedMinutes, formatDuration } from "@/lib/time";
 import { toast } from "sonner";
 import { useState } from "react";
@@ -23,57 +22,71 @@ export default function AdminTimePage() {
   const { data: employees = [] } = useQuery<Employee[]>({
     queryKey: ["all-employees"],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, COLLECTIONS.EMPLOYEES, [Query.limit(100)]);
-      return res.documents as unknown as Employee[];
+      const { data, error } = await supabase
+        .from("employees")
+        .select("*")
+        .limit(100);
+      if (error) throw error;
+      return data as unknown as Employee[];
     },
   });
 
   const start = `${year}-${String(month).padStart(2, "0")}-01`;
   const end = `${year}-${String(month).padStart(2, "0")}-31`;
 
-  const { data: entries = [], isLoading } = useQuery<TimeEntry[]>({
+  const { data: entries = [], isLoading } = useQuery<TimeRecord[]>({
     queryKey: ["all-time-entries", year, month, selectedEmp],
     queryFn: async () => {
-      const filters = [
-        Query.greaterThanEqual("date", start),
-        Query.lessThanEqual("date", end),
-        Query.orderDesc("date"),
-        Query.limit(500),
-      ];
-      if (selectedEmp !== "all") filters.push(Query.equal("employeeId", selectedEmp));
-      const res = await databases.listDocuments(DB_ID, COLLECTIONS.TIME_ENTRIES, filters);
-      return res.documents as unknown as TimeEntry[];
+      let query = supabase
+        .from("time_records")
+        .select("*")
+        .gte("work_date", start)
+        .lte("work_date", end)
+        .order("work_date", { ascending: false })
+        .limit(500);
+      if (selectedEmp !== "all") query = query.eq("employee_id", selectedEmp);
+      const { data, error } = await query;
+      if (error) throw error;
+      return data as unknown as TimeRecord[];
     },
   });
 
   const approveMutation = useMutation({
-    mutationFn: (id: string) => databases.updateDocument(DB_ID, COLLECTIONS.TIME_ENTRIES, id, {
-      status: "approved", approvedBy: user!.$id,
-    }),
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("time_records")
+        .update({ status: "approved", approvedBy: user?.id })
+        .eq("id", id);
+      if (error) throw error;
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["all-time-entries"] }); toast.success("Genehmigt"); },
     onError: () => toast.error("Fehler"),
   });
 
   const rejectMutation = useMutation({
-    mutationFn: (id: string) => databases.updateDocument(DB_ID, COLLECTIONS.TIME_ENTRIES, id, {
-      status: "rejected", approvedBy: user!.$id,
-    }),
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("time_records")
+        .update({ status: "rejected", approvedBy: user?.id })
+        .eq("id", id);
+      if (error) throw error;
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["all-time-entries"] }); toast.success("Abgelehnt"); },
     onError: () => toast.error("Fehler"),
   });
 
-  const empMap = Object.fromEntries(employees.map(e => [e.$id, e]));
+  const empMap = Object.fromEntries(employees.map(e => [e.id, e]));
   const MONTHS = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
 
   // Überstunden: Soll 8h/Tag * Arbeitstage
   const totalMinutesByEmp: Record<string, number> = {};
   entries.forEach(e => {
-    if (e.status !== "running") {
-      totalMinutesByEmp[e.employeeId] = (totalMinutesByEmp[e.employeeId] ?? 0) + calcWorkedMinutes(e);
+    if (e.end_time !== null) {
+      totalMinutesByEmp[e.employee_id] = (totalMinutesByEmp[e.employee_id] ?? 0) + calcWorkedMinutes(e);
     }
   });
 
-  const pending = entries.filter(e => e.status === "completed");
+  const pending = entries.filter(e => e.status === "submitted");
 
   return (
     <div className="space-y-6">
@@ -86,16 +99,16 @@ export default function AdminTimePage() {
       {employees.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {employees.map(emp => {
-            const mins = totalMinutesByEmp[emp.$id] ?? 0;
+            const mins = totalMinutesByEmp[emp.id] ?? 0;
             const targetMins = 160 * 60; // ~20 Arbeitstage × 8h
             const overtime = mins - targetMins;
             return (
-              <div key={emp.$id} className="rounded-xl border border-gray-200 bg-white p-4">
+              <div key={emp.id} className="rounded-xl border border-gray-200 bg-white p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#4F772D]/10 text-xs font-semibold text-[#4F772D]">
-                    {emp.firstName[0]}{emp.lastName[0]}
+                    {emp.first_name[0]}{emp.last_name[0]}
                   </div>
-                  <p className="text-sm font-medium text-gray-900">{emp.firstName} {emp.lastName}</p>
+                  <p className="text-sm font-medium text-gray-900">{emp.first_name} {emp.last_name}</p>
                 </div>
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-gray-500">Gesamt: <strong>{formatDuration(mins)}</strong></p>
@@ -126,7 +139,7 @@ export default function AdminTimePage() {
               className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 focus:border-[#4F772D] focus:outline-none"
             >
               <option value="all">Alle Mitarbeiter</option>
-              {employees.map(e => <option key={e.$id} value={e.$id}>{e.firstName} {e.lastName}</option>)}
+              {employees.map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
             </select>
             <div className="flex gap-1">
               {MONTHS.map((m, i) => (
@@ -145,26 +158,26 @@ export default function AdminTimePage() {
             <p className="px-5 py-8 text-center text-sm text-gray-400">Keine Einträge</p>
           ) : (
             entries.map(entry => {
-              const emp = empMap[entry.employeeId];
+              const emp = empMap[entry.employee_id];
               const mins = calcWorkedMinutes(entry);
               const isOver10h = mins > 10 * 60;
               return (
-                <div key={entry.$id} className="flex items-center justify-between px-5 py-3">
+                <div key={entry.id} className="flex items-center justify-between px-5 py-3">
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-gray-900">
-                        {emp ? `${emp.firstName} ${emp.lastName}` : "—"}
+                        {emp ? `${emp.first_name} ${emp.last_name}` : "—"}
                       </p>
                       <span className="text-xs text-gray-400">
-                        {format(parseISO(entry.date), "EEE d. MMM", { locale: de })}
+                        {format(parseISO(entry.work_date), "EEE d. MMM", { locale: de })}
                       </span>
                     </div>
                     <p className="text-xs text-gray-400">
-                      {entry.startTime} – {entry.endTime ?? "läuft"}
-                      {entry.breakMinutes > 0 && (
+                      {entry.start_time} – {entry.end_time ?? "läuft"}
+                      {entry.break_minutes > 0 && (
                         <span className="ml-2 inline-flex items-center gap-0.5">
                           <Coffee className="h-3 w-3" strokeWidth={1.5} />
-                          {entry.breakMinutes} Min.
+                          {entry.break_minutes} Min.
                         </span>
                       )}
                     </p>
@@ -177,15 +190,15 @@ export default function AdminTimePage() {
                   </div>
                   <div className="flex items-center gap-3">
                     <p className={`text-sm font-medium ${isOver10h ? "text-red-500" : "text-gray-900"}`}>
-                      {entry.endTime ? formatDuration(mins) : "—"}
+                      {entry.end_time ? formatDuration(mins) : "—"}
                     </p>
-                    {entry.status === "completed" ? (
+                    {entry.status === "submitted" ? (
                       <div className="flex gap-1">
-                        <button onClick={() => rejectMutation.mutate(entry.$id)}
+                        <button onClick={() => rejectMutation.mutate(entry.id)}
                           className="rounded-lg border border-red-100 bg-red-50 px-2 py-1 text-xs text-red-500 hover:bg-red-100 transition">
                           <X className="h-3.5 w-3.5" strokeWidth={2} />
                         </button>
-                        <button onClick={() => approveMutation.mutate(entry.$id)}
+                        <button onClick={() => approveMutation.mutate(entry.id)}
                           className="rounded-lg bg-[#4F772D] px-2 py-1 text-xs text-white hover:bg-[#31572C] transition">
                           <Check className="h-3.5 w-3.5" strokeWidth={2} />
                         </button>
@@ -194,10 +207,9 @@ export default function AdminTimePage() {
                       <span className={`text-[10px] rounded-full px-2 py-0.5 ${
                         entry.status === "approved" ? "bg-green-100 text-green-700" :
                         entry.status === "rejected" ? "bg-red-100 text-red-600" :
-                        entry.status === "running" ? "bg-blue-100 text-blue-700" :
                         "bg-gray-100 text-gray-500"
                       }`}>
-                        {entry.status === "approved" ? "Genehmigt" : entry.status === "rejected" ? "Abgelehnt" : "Läuft"}
+                        {entry.status === "approved" ? "Genehmigt" : entry.status === "rejected" ? "Abgelehnt" : "Entwurf"}
                       </span>
                     )}
                   </div>

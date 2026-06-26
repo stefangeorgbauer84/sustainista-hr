@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { account } from "@/lib/appwrite";
+import { supabase } from "@/lib/supabase";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -26,10 +26,10 @@ export default function ForgotPasswordPage() {
   async function onSubmit(data: FormData) {
     setLoading(true);
     try {
-      await account.createRecovery(
-        data.email,
-        `${window.location.origin}/reset-password`
-      );
+      const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
       setSent(true);
     } catch {
       toast.error("Fehler beim Senden. Bitte E-Mail-Adresse prüfen.");
@@ -69,11 +69,12 @@ export default function ForgotPasswordPage() {
                 Gib deine E-Mail-Adresse ein. Du bekommst einen Link zum Zurücksetzen deines Passworts.
               </p>
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700">E-Mail</label>
+                <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-gray-700">E-Mail</label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" strokeWidth={1.5} />
                   <input
                     {...register("email")}
+                    id="email"
                     type="email"
                     className="w-full rounded-lg border border-gray-300 py-2.5 pl-9 pr-3.5 text-sm focus:border-[#4F772D] focus:outline-none focus:ring-2 focus:ring-[#4F772D]/20"
                     placeholder="name@sustainista.net"
@@ -84,8 +85,11 @@ export default function ForgotPasswordPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-lg bg-[#4F772D] py-2.5 text-sm font-medium text-white hover:bg-[#31572C] disabled:opacity-60 transition"
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#4F772D] py-2.5 text-sm font-medium text-white hover:bg-[#31572C] disabled:opacity-60 transition"
               >
+                {loading && (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                )}
                 {loading ? "Wird gesendet…" : "Reset-Link senden"}
               </button>
               <Link href="/login" className="flex items-center justify-center gap-2 text-sm text-gray-500 hover:text-gray-700">

@@ -1,62 +1,90 @@
-import { databases, DB_ID, COLLECTIONS } from "./appwrite";
-import { ID, Query } from "appwrite";
-import type { TimeEntry } from "@/types";
+import { supabase } from './supabase'
+import type { TimeRecord } from '@/types'
 
-export async function startTimer(employeeId: string, note?: string): Promise<TimeEntry> {
-  const now = new Date();
-  return databases.createDocument(DB_ID, COLLECTIONS.TIME_ENTRIES, ID.unique(), {
-    employeeId,
-    date: now.toISOString().split("T")[0],
-    startTime: now.toTimeString().slice(0, 5),
-    breakMinutes: 0,
-    status: "running",
-    note: note ?? null,
-  }) as unknown as TimeEntry;
+async function getMyEmployeeId(): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data } = await supabase
+    .from('profiles')
+    .select('employee_id')
+    .eq('id', user!.id)
+    .single()
+  return data!.employee_id
 }
 
-export async function stopTimer(entryId: string): Promise<TimeEntry> {
-  const now = new Date();
-  return databases.updateDocument(DB_ID, COLLECTIONS.TIME_ENTRIES, entryId, {
-    endTime: now.toTimeString().slice(0, 5),
-    status: "completed",
-  }) as unknown as TimeEntry;
+export async function startTimer(note?: string): Promise<TimeRecord> {
+  const employeeId = await getMyEmployeeId()
+  const now = new Date()
+  const { data, error } = await supabase
+    .from('time_records')
+    .insert({
+      employee_id: employeeId,
+      work_date: now.toISOString().split('T')[0],
+      start_time: now.toTimeString().slice(0, 5),
+      break_minutes: 0,
+      status: 'draft',
+      notes: note ?? null,
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return data
 }
 
-export async function getRunningEntry(employeeId: string): Promise<TimeEntry | null> {
-  const res = await databases.listDocuments(DB_ID, COLLECTIONS.TIME_ENTRIES, [
-    Query.equal("employeeId", employeeId),
-    Query.equal("status", "running"),
-    Query.limit(1),
-  ]);
-  return (res.documents[0] as unknown as TimeEntry) ?? null;
+export async function stopTimer(recordId: string): Promise<TimeRecord> {
+  const now = new Date()
+  const { data, error } = await supabase
+    .from('time_records')
+    .update({ end_time: now.toTimeString().slice(0, 5) })
+    .eq('id', recordId)
+    .select()
+    .single()
+  if (error) throw error
+  return data
 }
 
-export async function getTimeEntriesForEmployee(
+export async function getRunningEntry(): Promise<TimeRecord | null> {
+  const employeeId = await getMyEmployeeId()
+  const today = new Date().toISOString().split('T')[0]
+  const { data } = await supabase
+    .from('time_records')
+    .select('*')
+    .eq('employee_id', employeeId)
+    .eq('work_date', today)
+    .is('end_time', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single()
+  return data ?? null
+}
+
+export async function getTimeRecordsForEmployee(
   employeeId: string,
   year: number,
   month: number
-): Promise<TimeEntry[]> {
-  const start = `${year}-${String(month).padStart(2, "0")}-01`;
-  const end = `${year}-${String(month).padStart(2, "0")}-31`;
-  const res = await databases.listDocuments(DB_ID, COLLECTIONS.TIME_ENTRIES, [
-    Query.equal("employeeId", employeeId),
-    Query.greaterThanEqual("date", start),
-    Query.lessThanEqual("date", end),
-    Query.orderDesc("date"),
-    Query.limit(100),
-  ]);
-  return res.documents as unknown as TimeEntry[];
+): Promise<TimeRecord[]> {
+  const start = `${year}-${String(month).padStart(2, '0')}-01`
+  const end = `${year}-${String(month).padStart(2, '0')}-31`
+  const { data, error } = await supabase
+    .from('time_records')
+    .select('*')
+    .eq('employee_id', employeeId)
+    .gte('work_date', start)
+    .lte('work_date', end)
+    .order('work_date', { ascending: false })
+    .limit(100)
+  if (error) throw error
+  return data ?? []
 }
 
-export function calcWorkedMinutes(entry: TimeEntry): number {
-  if (!entry.endTime) return 0;
-  const [sh, sm] = entry.startTime.split(":").map(Number);
-  const [eh, em] = entry.endTime.split(":").map(Number);
-  return (eh * 60 + em) - (sh * 60 + sm) - entry.breakMinutes;
+export function calcWorkedMinutes(record: TimeRecord): number {
+  if (!record.end_time) return 0
+  const [sh, sm] = record.start_time.split(':').map(Number)
+  const [eh, em] = record.end_time.split(':').map(Number)
+  return (eh * 60 + em) - (sh * 60 + sm) - record.break_minutes
 }
 
 export function formatDuration(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return `${h}h ${String(m).padStart(2, "0")}m`;
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return `${h}h ${String(m).padStart(2, '0')}m`
 }

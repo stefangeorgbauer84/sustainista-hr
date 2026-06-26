@@ -1,11 +1,15 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { databases, DB_ID } from "@/lib/appwrite";
-import { PERF_COLLECTIONS } from "@/app/lib/collections";
-import { Query } from "appwrite";
-import type { KaizenItem } from "@/types";
+import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+
+type KaizenItem = {
+  id: string; employee_id: string; title: string; description: string | null;
+  category: string | null; status: string; admin_comment: string | null;
+  upvotes: number; created_at: string;
+  employees: { first_name: string; last_name: string } | null;
+};
 import { useState } from "react";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
@@ -25,19 +29,27 @@ export default function AdminKaizenPage() {
   const { data: items = [], isLoading } = useQuery<KaizenItem[]>({
     queryKey: ["kaizen"],
     queryFn: async () => {
-      const res = await databases.listDocuments(DB_ID, PERF_COLLECTIONS.KAIZEN, [
-        Query.orderDesc("$createdAt"), Query.limit(200),
-      ]);
-      return res.documents as unknown as KaizenItem[];
+      const { data, error } = await supabase
+        .from("kaizen_items")
+        .select("*, employees(first_name, last_name)")
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return data as unknown as KaizenItem[];
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, status, adminComment }: { id: string; status: string; adminComment?: string }) =>
-      databases.updateDocument(DB_ID, PERF_COLLECTIONS.KAIZEN, id, {
-        status,
-        ...(adminComment !== undefined ? { adminComment } : {}),
-      }),
+    mutationFn: async ({ id, status, adminComment }: { id: string; status: string; adminComment?: string }) => {
+      const { error } = await supabase
+        .from("kaizen_items")
+        .update({
+          status,
+          ...(adminComment !== undefined ? { admin_comment: adminComment } : {}),
+        })
+        .eq("id", id);
+      if (error) throw error;
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["kaizen"] });
       toast.success("Status aktualisiert");
@@ -61,7 +73,7 @@ export default function AdminKaizenPage() {
           <p className="text-xs text-gray-500 leading-relaxed">{item.description}</p>
           <div className="mt-2 flex items-center gap-2 flex-wrap">
             {item.category && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500">{item.category}</span>}
-            <span className="text-[10px] text-gray-400">{item.employeeName} · {format(parseISO(item.$createdAt), "d. MMM", { locale: de })}</span>
+            <span className="text-[10px] text-gray-400">{item.employees ? `${item.employees.first_name} ${item.employees.last_name}` : "—"} · {format(parseISO(item.created_at), "d. MMM", { locale: de })}</span>
           </div>
         </div>
 
@@ -69,8 +81,8 @@ export default function AdminKaizenPage() {
         <input
           className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs focus:border-[#4F772D] focus:outline-none"
           placeholder="Feedback hinzufügen (optional)…"
-          value={comment[item.$id] ?? item.adminComment ?? ""}
-          onChange={e => setComment(p => ({ ...p, [item.$id]: e.target.value }))}
+          value={comment[item.id] ?? item.admin_comment ?? ""}
+          onChange={e => setComment(p => ({ ...p, [item.id]: e.target.value }))}
         />
 
         {/* Actions */}
@@ -78,7 +90,7 @@ export default function AdminKaizenPage() {
           {(["open", "in-progress", "done", "declined"] as const).map(s => (
             <button
               key={s}
-              onClick={() => updateMutation.mutate({ id: item.$id, status: s, adminComment: comment[item.$id] ?? item.adminComment ?? "" })}
+              onClick={() => updateMutation.mutate({ id: item.id, status: s, adminComment: comment[item.id] ?? item.admin_comment ?? "" })}
               disabled={item.status === s}
               className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
                 item.status === s ? STATUS_MAP[s].color + " cursor-default" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
@@ -123,7 +135,7 @@ export default function AdminKaizenPage() {
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
-          {items.map(item => <ItemCard key={item.$id} item={item} />)}
+          {items.map(item => <ItemCard key={item.id} item={item} />)}
         </div>
       )}
     </div>
