@@ -70,7 +70,6 @@ export default function RegisterPage() {
   async function onSubmit(data: FormData) {
     setLoading(true);
     try {
-      // 1. Supabase Auth Account anlegen
       const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email: data.email,
         password: data.password,
@@ -84,26 +83,13 @@ export default function RegisterPage() {
       });
       if (signUpError) throw signUpError;
 
-      const userId = authData.user?.id;
-      if (!userId) throw new Error("Kein Benutzer erstellt");
+      if (!authData.user) throw new Error("Kein Benutzer erstellt");
 
-      // 2. Employee-Profil als "pending" anlegen
-      const { error: empError } = await supabase.from("employees").insert({
-        first_name: data.firstName,
-        last_name: data.lastName,
-        contact_email: data.email,
-        employment_type: "vollzeit",
-        entry_date: new Date().toISOString().split("T")[0],
-        contract_type: "unbefristet",
-        hours_per_week: 38.5,
-        employment_percentage: 100,
-        is_active: false,
-        custom_fields: {
-          status: "pending",
-          onboarding_step: "personal",
-        },
-      });
-      if (empError) throw empError;
+      if (!authData.session) {
+        toast.success("Bitte bestätige deine E-Mail-Adresse. Danach kannst du dich anmelden.");
+        router.replace("/login");
+        return;
+      }
 
       router.replace("/onboarding");
     } catch (e: unknown) {
