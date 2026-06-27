@@ -5,7 +5,7 @@
 create policy "employees: self register"
   on employees for insert
   with check (
-    auth.uid() = user_id
+    auth.uid() is not null
     and is_active = false
     and (custom_fields->>'status') = 'pending'
   );

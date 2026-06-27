@@ -89,7 +89,6 @@ export default function RegisterPage() {
 
       // 2. Employee-Profil als "pending" anlegen
       const { error: empError } = await supabase.from("employees").insert({
-        user_id: userId,
         first_name: data.firstName,
         last_name: data.lastName,
         contact_email: data.email,

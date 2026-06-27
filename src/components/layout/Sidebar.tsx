@@ -11,7 +11,7 @@ import {
   Clock, Calendar, CalendarDays, FileText, Home, Users,
   BarChart2, LogOut, Leaf, User, TrendingUp, UserCheck,
   Trophy, HeartPulse, Target, Lightbulb, ClipboardList, Globe,
-  Building2, LayoutGrid, MapPin, Settings,
+  Building2, LayoutGrid, MapPin, Settings, ShieldAlert, Download,
 } from "lucide-react";
 import { TourStartButton } from "@/components/layout/GuidedTour";
 
@@ -45,6 +45,7 @@ function buildAdminNav(pendingCount: number, changeRequestCount: number): NavIte
     { href: "/admin/leadership", label: "Leadership", icon: <TrendingUp strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "leadership" },
     { href: "/admin", label: "Übersicht", icon: <Home strokeWidth={1.5} className="h-4 w-4" /> },
     { href: "/admin/employees", label: "Mitarbeiter", icon: <Users strokeWidth={1.5} className="h-4 w-4" /> },
+    { href: "/admin/employees/status", label: "Status", icon: <ShieldAlert strokeWidth={1.5} className="h-4 w-4" /> },
     {
       href: "/admin/onboarding", label: "Onboarding",
       icon: <UserCheck strokeWidth={1.5} className="h-4 w-4" />,
@@ -58,6 +59,7 @@ function buildAdminNav(pendingCount: number, changeRequestCount: number): NavIte
     { href: "/admin/performance", label: "Performance", icon: <ClipboardList strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "performance" },
     { href: "/admin/kaizen", label: "Kaizen-Board", icon: <Lightbulb strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "kaizen" },
     { href: "/admin/reports", label: "Reports", icon: <BarChart2 strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "reports" },
+    { href: "/admin/reports/payroll", label: "Lohnexport", icon: <Download strokeWidth={1.5} className="h-4 w-4" /> },
     { href: "/admin/documents", label: "Dokumente", icon: <FileText strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "documents" },
     { href: "/admin/locations", label: "Filialen", icon: <MapPin strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "locations" },
   ];

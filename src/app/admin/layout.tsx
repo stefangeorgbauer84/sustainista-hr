@@ -7,6 +7,7 @@ import Sidebar from "@/components/layout/Sidebar";
 import MobileSidebar from "@/components/layout/MobileSidebar";
 import GuidedTour from "@/components/layout/GuidedTour";
 import BrandStyle from "@/components/layout/BrandStyle";
+import AdminBottomNav from "@/components/layout/AdminBottomNav";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, isAdminUser, company, loading } = useAuth();
@@ -37,10 +38,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <Sidebar />
         </div>
         <MobileSidebar />
-        <main className="flex-1 overflow-y-auto bg-gray-50 p-4 pt-14 md:p-6">
+        <main className="flex-1 overflow-y-auto bg-gray-50 p-4 pb-24 pt-14 md:p-6 md:pb-6">
           {children}
         </main>
         <GuidedTour />
+        <AdminBottomNav />
       </div>
     </>
   );

@@ -229,6 +229,16 @@ export interface ScheduleChangeRequest {
   created_at: string
 }
 
+export interface Contract {
+  id: string
+  company_id: string
+  employee_id: string
+  title: string
+  html_content: string
+  created_at: string
+  updated_at: string
+}
+
 export interface WorkStats {
   totalHoursThisMonth: number
   overtimeHours: number
