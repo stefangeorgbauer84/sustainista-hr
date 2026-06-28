@@ -55,7 +55,7 @@ export default function PerformancePage() {
       const { data, error } = await supabase
         .from("employees")
         .select("*")
-        .eq("status", "active")
+        .eq("is_active", true)
         .limit(100);
       if (error) throw error;
       return data as unknown as Employee[];
@@ -84,7 +84,7 @@ export default function PerformancePage() {
       const { error } = await supabase
         .from("performance_reviews")
         .insert({
-          employeeId: empId,
+          employee_id: empId,
           period,
           status: "self-pending",
         });

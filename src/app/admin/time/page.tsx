@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { useState } from "react";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
-import { Check, X, Clock, Coffee, AlertTriangle } from "lucide-react";
+import { Check, X, Clock, Coffee, AlertTriangle, Plus, Download, CheckCheck } from "lucide-react";
 
 export default function AdminTimePage() {
   const { user } = useAuth();
@@ -18,6 +18,11 @@ export default function AdminTimePage() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year] = useState(now.getFullYear());
   const [selectedEmp, setSelectedEmp] = useState("all");
+  const [showManual, setShowManual] = useState(false);
+  const [manual, setManual] = useState({
+    employee_id: "", work_date: format(now, "yyyy-MM-dd"),
+    start_time: "08:00", end_time: "16:00", break_minutes: "30",
+  });
 
   const { data: employees = [] } = useQuery<Employee[]>({
     queryKey: ["all-employees"],
@@ -25,7 +30,9 @@ export default function AdminTimePage() {
       const { data, error } = await supabase
         .from("employees")
         .select("*")
-        .limit(100);
+        .eq("is_active", true)
+        .order("last_name")
+        .limit(200);
       if (error) throw error;
       return data as unknown as Employee[];
     },
@@ -75,10 +82,77 @@ export default function AdminTimePage() {
     onError: () => toast.error("Fehler"),
   });
 
+  const bulkApproveMutation = useMutation({
+    mutationFn: async () => {
+      const pendingIds = entries.filter(e => e.status === "submitted").map(e => e.id);
+      if (pendingIds.length === 0) return 0;
+      const { error } = await supabase
+        .from("time_records")
+        .update({ status: "approved", approved_by: user?.id })
+        .in("id", pendingIds);
+      if (error) throw error;
+      return pendingIds.length;
+    },
+    onSuccess: (count) => {
+      qc.invalidateQueries({ queryKey: ["all-time-entries"] });
+      toast.success(`${count ?? 0} Einträge genehmigt`);
+    },
+    onError: () => toast.error("Fehler beim Bulk-Genehmigen"),
+  });
+
+  const manualMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from("time_records").insert({
+        employee_id: manual.employee_id,
+        work_date: manual.work_date,
+        start_time: manual.start_time,
+        end_time: manual.end_time,
+        break_minutes: Number(manual.break_minutes),
+        status: "approved",
+        approved_by: user?.id,
+        created_via: "admin",
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["all-time-entries"] });
+      toast.success("Eintrag erfasst und genehmigt");
+      setShowManual(false);
+      setManual({ employee_id: "", work_date: format(now, "yyyy-MM-dd"), start_time: "08:00", end_time: "16:00", break_minutes: "30" });
+    },
+    onError: () => toast.error("Fehler beim Erfassen"),
+  });
+
+  function exportCSV() {
+    const empMap = Object.fromEntries(employees.map(e => [e.id, e]));
+    const header = ["Datum", "Mitarbeiter", "Start", "Ende", "Pause (Min)", "Gesamt (Std)", "Status"];
+    const rows = entries.map(e => {
+      const emp = empMap[e.employee_id];
+      const mins = e.end_time ? calcWorkedMinutes(e) : 0;
+      return [
+        e.work_date,
+        emp ? `${emp.last_name} ${emp.first_name}` : e.employee_id,
+        e.start_time,
+        e.end_time ?? "",
+        e.break_minutes,
+        (mins / 60).toFixed(2),
+        e.status,
+      ];
+    });
+    const csv = [header, ...rows].map(r => r.map(v => `"${v}"`).join(";")).join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `zeiterfassung-${year}-${String(month).padStart(2, "0")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("CSV exportiert");
+  }
+
   const empMap = Object.fromEntries(employees.map(e => [e.id, e]));
   const MONTHS = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
 
-  // Überstunden: Soll 8h/Tag * Arbeitstage
   const totalMinutesByEmp: Record<string, number> = {};
   entries.forEach(e => {
     if (e.end_time !== null) {
@@ -87,23 +161,53 @@ export default function AdminTimePage() {
   });
 
   const pending = entries.filter(e => e.status === "submitted");
+  const inp = "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#4F772D] focus:outline-none focus:ring-2 focus:ring-[#4F772D]/20";
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-gray-900">Zeiterfassung — Übersicht</h1>
-        <p className="mt-0.5 text-sm text-gray-500">{pending.length} Einträge warten auf Genehmigung</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900">Zeiterfassung — Übersicht</h1>
+          <p className="mt-0.5 text-sm text-gray-500">{pending.length} Einträge warten auf Genehmigung</p>
+        </div>
+        <div className="flex gap-2 flex-wrap justify-end">
+          <button
+            onClick={exportCSV}
+            className="flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 transition"
+          >
+            <Download className="h-4 w-4" strokeWidth={1.5} />
+            CSV
+          </button>
+          <button
+            onClick={() => setShowManual(true)}
+            className="flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 transition"
+          >
+            <Plus className="h-4 w-4" strokeWidth={1.5} />
+            Manuell
+          </button>
+          {pending.length > 0 && (
+            <button
+              onClick={() => bulkApproveMutation.mutate()}
+              disabled={bulkApproveMutation.isPending}
+              className="flex items-center gap-1.5 rounded-lg bg-[#4F772D] px-3 py-2 text-sm font-medium text-white hover:bg-[#31572C] disabled:opacity-60 transition"
+            >
+              <CheckCheck className="h-4 w-4" strokeWidth={2} />
+              {bulkApproveMutation.isPending ? "…" : `Alle ${pending.length} genehmigen`}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Überstunden-Summary */}
-      {employees.length > 0 && (
+      {/* Überstunden-Summary — nur wenn Einträge vorhanden */}
+      {Object.keys(totalMinutesByEmp).length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {employees.map(emp => {
-            const mins = totalMinutesByEmp[emp.id] ?? 0;
+          {Object.entries(totalMinutesByEmp).map(([empId, mins]) => {
+            const emp = empMap[empId];
+            if (!emp) return null;
             const targetMins = Math.round((emp.hours_per_week ?? 40) * 52 / 12) * 60;
             const overtime = mins - targetMins;
             return (
-              <div key={emp.id} className="rounded-xl border border-gray-200 bg-white p-4">
+              <div key={empId} className="rounded-xl border border-gray-200 bg-white p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#4F772D]/10 text-xs font-semibold text-[#4F772D]">
                     {emp.first_name[0]}{emp.last_name[0]}
@@ -131,8 +235,9 @@ export default function AdminTimePage() {
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-gray-400" strokeWidth={1.5} />
             <h2 className="text-sm font-medium text-gray-900">Alle Einträge</h2>
+            <span className="text-xs text-gray-400">({entries.length})</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <select
               value={selectedEmp}
               onChange={e => setSelectedEmp(e.target.value)}
@@ -141,7 +246,7 @@ export default function AdminTimePage() {
               <option value="all">Alle Mitarbeiter</option>
               {employees.map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
             </select>
-            <div className="flex gap-1">
+            <div className="flex gap-1 flex-wrap">
               {MONTHS.map((m, i) => (
                 <button key={i} onClick={() => setMonth(i + 1)}
                   className={`rounded px-2 py-1 text-xs transition ${i + 1 === month ? "bg-[#4F772D] text-white" : "text-gray-500 hover:bg-gray-100"}`}
@@ -155,7 +260,7 @@ export default function AdminTimePage() {
           {isLoading ? (
             <p className="px-5 py-8 text-center text-sm text-gray-400">Wird geladen…</p>
           ) : entries.length === 0 ? (
-            <p className="px-5 py-8 text-center text-sm text-gray-400">Keine Einträge</p>
+            <p className="px-5 py-8 text-center text-sm text-gray-400">Keine Einträge für diesen Zeitraum</p>
           ) : (
             entries.map(entry => {
               const emp = empMap[entry.employee_id];
@@ -209,7 +314,8 @@ export default function AdminTimePage() {
                         entry.status === "rejected" ? "bg-red-100 text-red-600" :
                         "bg-gray-100 text-gray-500"
                       }`}>
-                        {entry.status === "approved" ? "Genehmigt" : entry.status === "rejected" ? "Abgelehnt" : "Entwurf"}
+                        {entry.status === "approved" ? "Genehmigt" :
+                         entry.status === "rejected" ? "Abgelehnt" : "Entwurf"}
                       </span>
                     )}
                   </div>
@@ -219,6 +325,65 @@ export default function AdminTimePage() {
           )}
         </div>
       </div>
+
+      {/* Manueller Eintrag Modal */}
+      {showManual && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-gray-900">Zeiterfassung manuell erfassen</h3>
+              <button onClick={() => setShowManual(false)} className="rounded-lg p-1.5 hover:bg-gray-100">
+                <X className="h-4 w-4 text-gray-400" strokeWidth={1.5} />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700">Mitarbeiter *</label>
+                <select value={manual.employee_id} onChange={e => setManual(p => ({ ...p, employee_id: e.target.value }))} className={inp}>
+                  <option value="">— bitte wählen —</option>
+                  {employees.map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700">Datum *</label>
+                <input type="date" value={manual.work_date} onChange={e => setManual(p => ({ ...p, work_date: e.target.value }))} className={inp} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Start *</label>
+                  <input type="time" value={manual.start_time} onChange={e => setManual(p => ({ ...p, start_time: e.target.value }))} className={inp} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Ende *</label>
+                  <input type="time" value={manual.end_time} onChange={e => setManual(p => ({ ...p, end_time: e.target.value }))} className={inp} />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700">Pause (Minuten)</label>
+                <input type="number" min="0" max="120" value={manual.break_minutes}
+                  onChange={e => setManual(p => ({ ...p, break_minutes: e.target.value }))} className={inp} />
+              </div>
+              <p className="text-[10px] text-gray-400">
+                Der Eintrag wird direkt als <strong>Genehmigt</strong> gespeichert (Admin-Erfassung).
+              </p>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => setShowManual(false)}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
+                Abbrechen
+              </button>
+              <button
+                onClick={() => manualMutation.mutate()}
+                disabled={!manual.employee_id || !manual.work_date || !manual.start_time || !manual.end_time || manualMutation.isPending}
+                className="flex items-center gap-1.5 rounded-lg bg-[#4F772D] px-4 py-2 text-sm font-medium text-white hover:bg-[#31572C] disabled:opacity-60 transition"
+              >
+                <Plus className="h-4 w-4" strokeWidth={2} />
+                {manualMutation.isPending ? "Wird gespeichert…" : "Eintrag speichern"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

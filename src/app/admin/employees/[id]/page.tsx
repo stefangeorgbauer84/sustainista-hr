@@ -15,7 +15,7 @@ import { canSeePfaendung, canSeeBrutto } from "@/lib/rbac";
 import {
   ArrowLeft, Clock, Calendar, FileText,
   Mail, Phone, Building, CreditCard, Download, MapPin,
-  Pencil, X, Save, AlertTriangle, Baby, AlertCircle,
+  Pencil, X, Save, AlertTriangle, Baby, AlertCircle, ShieldOff,
 } from "lucide-react";
 
 const statusColors: Record<string, string> = {
@@ -261,6 +261,43 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
       setEditing(false);
     },
     onError: (e: Error) => toast.error(e.message ?? "Fehler beim Speichern"),
+  });
+
+  const [showDsgvo, setShowDsgvo] = useState(false);
+
+  const dsgvoMutation = useMutation({
+    mutationFn: async () => {
+      if (!employee) return;
+      const anonymizedCf: CF = {
+        ...cf,
+        brutto: undefined,
+        notizen: undefined,
+        kst_raw: cf.kst_raw,
+      };
+      const { error } = await supabase.from("employees").update({
+        contact_email: null,
+        contact_phone: null,
+        bank_iban: null,
+        birth_date: null,
+        custom_fields: anonymizedCf,
+      }).eq("id", id);
+      if (error) throw error;
+      await supabase.from("employee_history").insert({
+        employee_id: id,
+        company_id: employee.company_id,
+        changed_by: user?.id ?? null,
+        change_type: "anonymize",
+        old_values: {},
+        new_values: {},
+        change_note: "DSGVO-Anonymisierung: Kontaktdaten, IBAN, Geburtsdatum und Lohndaten gelöscht",
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employee", id] });
+      toast.success("Daten anonymisiert (DSGVO)");
+      setShowDsgvo(false);
+    },
+    onError: () => toast.error("Fehler bei der Anonymisierung"),
   });
 
   const totalMins = timeEntries.filter(e => e.end_time !== null).reduce((s, e) => s + calcWorkedMinutes(e), 0);
@@ -577,6 +614,68 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
           })}
         </div>
       </div>
+      {/* DSGVO Anonymisierung — nur für ausgetretene MAs, nur payroll */}
+      {!employee.is_active && showBrutto && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-5">
+          <div className="flex items-start gap-3">
+            <ShieldOff className="h-5 w-5 text-red-400 mt-0.5 flex-shrink-0" strokeWidth={1.5} />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-red-800">DSGVO-Datenlöschung</p>
+              <p className="mt-0.5 text-xs text-red-600">
+                Mitarbeiter ist ausgetreten. Gemäß DSGVO Art. 17 können personenbezogene Daten
+                (Kontakt, IBAN, Geburtsdatum, Lohndaten) anonymisiert werden.
+                Dieser Vorgang ist <strong>nicht rückgängig</strong> zu machen.
+              </p>
+              <button
+                onClick={() => setShowDsgvo(true)}
+                className="mt-3 flex items-center gap-1.5 rounded-lg border border-red-300 bg-white px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 transition"
+              >
+                <ShieldOff className="h-3.5 w-3.5" strokeWidth={1.5} />
+                Daten anonymisieren
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDsgvo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="mb-4 flex items-start gap-3">
+              <ShieldOff className="h-5 w-5 text-red-500 mt-0.5" strokeWidth={1.5} />
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900">DSGVO-Anonymisierung bestätigen</h3>
+                <p className="mt-1 text-xs text-gray-500">
+                  Folgende Daten werden unwiderruflich gelöscht:
+                </p>
+                <ul className="mt-2 space-y-0.5 text-xs text-gray-600 list-disc list-inside">
+                  <li>E-Mail &amp; Telefon</li>
+                  <li>IBAN</li>
+                  <li>Geburtsdatum</li>
+                  <li>Brutto &amp; Notizen</li>
+                </ul>
+                <p className="mt-2 text-xs text-red-500 font-medium">Nicht rückgängig zu machen!</p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowDsgvo(false)}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={() => dsgvoMutation.mutate()}
+                disabled={dsgvoMutation.isPending}
+                className="flex items-center gap-1.5 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-60"
+              >
+                <ShieldOff className="h-4 w-4" strokeWidth={1.5} />
+                {dsgvoMutation.isPending ? "Wird anonymisiert…" : "Jetzt anonymisieren"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

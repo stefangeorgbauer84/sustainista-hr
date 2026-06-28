@@ -11,7 +11,7 @@ import {
   Clock, Calendar, CalendarDays, FileText, Home, Users,
   BarChart2, LogOut, Leaf, User, TrendingUp, UserCheck,
   Trophy, HeartPulse, Target, Lightbulb, ClipboardList, Globe,
-  Building2, LayoutGrid, MapPin, Settings, ShieldAlert, Download,
+  Building2, LayoutGrid, MapPin, Settings, ShieldAlert, Download, Briefcase,
 } from "lucide-react";
 import { TourStartButton } from "@/components/layout/GuidedTour";
 
@@ -55,6 +55,7 @@ function buildAdminNav(pendingCount: number, changeRequestCount: number): NavIte
     { href: "/admin/schedule", label: "Dienstplan", icon: <CalendarDays strokeWidth={1.5} className="h-4 w-4" />, badge: changeRequestCount > 0 ? changeRequestCount : undefined, moduleKey: "schedule" },
     { href: "/admin/time", label: "Zeiterfassung", icon: <Clock strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "time" },
     { href: "/admin/leave", label: "Urlaubsanträge", icon: <Calendar strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "leave" },
+    { href: "/admin/recruiting", label: "Recruiting", icon: <Briefcase strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "recruiting" },
     { href: "/admin/pulse", label: "Team-Puls", icon: <HeartPulse strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "pulse" },
     { href: "/admin/performance", label: "Performance", icon: <ClipboardList strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "performance" },
     { href: "/admin/kaizen", label: "Kaizen-Board", icon: <Lightbulb strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "kaizen" },

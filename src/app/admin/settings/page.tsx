@@ -8,7 +8,7 @@ import {
   Clock, Calendar, CalendarDays, FileText, Users,
   BarChart2, TrendingUp, UserCheck, Trophy, HeartPulse,
   Target, Lightbulb, ClipboardList, Globe, MapPin, Settings,
-  Save, ToggleLeft, ToggleRight,
+  Save, ToggleLeft, ToggleRight, Briefcase,
 } from "lucide-react";
 
 interface ModuleConfig {
@@ -32,6 +32,7 @@ const ALL_MODULES: ModuleConfig[] = [
   { key: "reports", label: "Reports", description: "Auswertungen und Exports", icon: <BarChart2 strokeWidth={1.5} className="h-5 w-5" />, section: "admin" },
   { key: "documents", label: "Dokumente", description: "Dateiverwaltung für das Unternehmen", icon: <FileText strokeWidth={1.5} className="h-5 w-5" />, section: "admin" },
   { key: "locations", label: "Filialen", description: "Standorte und Filialen verwalten", icon: <MapPin strokeWidth={1.5} className="h-5 w-5" />, section: "admin" },
+  { key: "recruiting", label: "Recruiting", description: "Bewerbungen und Stellenausschreibungen verwalten", icon: <Briefcase strokeWidth={1.5} className="h-5 w-5" />, section: "admin" },
   // Employee
   { key: "time", label: "Zeiterfassung", description: "Eigene Arbeitszeiten eintragen", icon: <Clock strokeWidth={1.5} className="h-5 w-5" />, section: "employee" },
   { key: "leave", label: "Urlaub & Abwesenheit", description: "Urlaubsanträge stellen und einsehen", icon: <Calendar strokeWidth={1.5} className="h-5 w-5" />, section: "employee" },
