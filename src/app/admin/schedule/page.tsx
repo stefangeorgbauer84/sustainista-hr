@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
@@ -15,7 +15,7 @@ import { de } from "date-fns/locale";
 import {
   ChevronLeft, ChevronRight, Plus, Check, X,
   Clock, AlertTriangle, MapPin, Users, Calendar,
-  Send, TrendingUp, Share2,
+  Send, TrendingUp, Share2, LayoutGrid,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -74,7 +74,7 @@ export default function AdminSchedulePage() {
   const qc = useQueryClient();
   const today = new Date();
 
-  const [tab, setTab] = useState<"grid" | "summary" | "requests">("grid");
+  const [tab, setTab] = useState<"grid" | "raster" | "summary" | "requests">("grid");
   const [locationId, setLocationId] = useState("");
   const [weekStart, setWeekStart] = useState<Date>(() => getMonday(today));
   const [editing, setEditing] = useState<EditState | null>(null);
@@ -329,10 +329,11 @@ export default function AdminSchedulePage() {
 
       {/* Tabs */}
       <div className="flex gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1 w-fit">
-        {(["grid","summary","requests"] as const).map((t) => (
+        {(["grid","raster","summary","requests"] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)}
             className={`relative rounded-lg px-4 py-2 text-sm font-medium transition ${tab === t ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}>
             {t === "grid" && <><Calendar className="inline h-3.5 w-3.5 mr-1.5 -mt-0.5" strokeWidth={1.5} />Dienstplan</>}
+            {t === "raster" && <><LayoutGrid className="inline h-3.5 w-3.5 mr-1.5 -mt-0.5" strokeWidth={1.5} />Rasterplan</>}
             {t === "summary" && <><TrendingUp className="inline h-3.5 w-3.5 mr-1.5 -mt-0.5" strokeWidth={1.5} />Stunden</>}
             {t === "requests" && <>
               <Clock className="inline h-3.5 w-3.5 mr-1.5 -mt-0.5" strokeWidth={1.5} />Anfragen
@@ -483,6 +484,29 @@ export default function AdminSchedulePage() {
             <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 rounded bg-red-100 border border-red-200" />Storniert</span>
           </div>
         </div>
+      )}
+
+      {/* ── Raster Tab ── */}
+      {tab === "raster" && (
+        !locationId ? (
+          <div className="flex h-48 items-center justify-center rounded-xl border-2 border-dashed border-gray-200">
+            <div className="text-center"><MapPin className="mx-auto h-8 w-8 text-gray-300 mb-2" strokeWidth={1.5} /><p className="text-sm text-gray-400">Filiale wählen</p></div>
+          </div>
+        ) : empLocs.length === 0 ? (
+          <div className="flex h-48 items-center justify-center rounded-xl border border-gray-200 bg-white">
+            <div className="text-center"><Users className="mx-auto h-8 w-8 text-gray-300 mb-2" strokeWidth={1.5} /><p className="text-sm text-gray-400">Keine Mitarbeiter:innen zugeordnet</p></div>
+          </div>
+        ) : (
+          <RasterPlanView
+            empLocs={empLocs}
+            shifts={shifts}
+            shiftMap={shiftMap}
+            weekDays={weekDays}
+            weekStart={weekStart}
+            setWeekStart={setWeekStart}
+            locationId={locationId}
+          />
+        )
       )}
 
       {/* ── Summary Tab ── */}
@@ -738,6 +762,315 @@ function ChangeRequestPanel({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   RASTERPLAN VIEW  —  Stunden-Raster wie Papier-Dienstplan
+   ══════════════════════════════════════════════════════════ */
+
+const HOUR_SLOTS = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+
+function RasterPlanView({
+  empLocs,
+  shifts,
+  shiftMap,
+  weekDays,
+  weekStart,
+  setWeekStart,
+  locationId,
+}: {
+  empLocs: EmpLocRow[];
+  shifts: ShiftSchedule[];
+  shiftMap: Record<string, Record<string, ShiftSchedule>>;
+  weekDays: Date[];
+  weekStart: Date;
+  setWeekStart: (d: Date) => void;
+  locationId: string;
+}) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [dayIdx, setDayIdx] = useState(0);
+  const [hourMap, setHourMap] = useState<Record<string, Set<number>>>({});
+  const [saving, setSaving] = useState(false);
+
+  const dateStr = toDateStr(weekDays[dayIdx]);
+
+  // Sync grid from existing shifts whenever day or data changes
+  useEffect(() => {
+    const map: Record<string, Set<number>> = {};
+    empLocs.forEach((el) => {
+      const shift = shifts.find(
+        (s) => s.employee_id === el.employee_id && s.scheduled_date === dateStr,
+      );
+      if (shift && shift.status !== "cancelled") {
+        const startH = parseInt(shift.start_time.slice(0, 2));
+        const endH = parseInt(shift.end_time.slice(0, 2));
+        const hours = new Set<number>();
+        for (let h = startH; h < endH; h++) {
+          if (HOUR_SLOTS.includes(h)) hours.add(h);
+        }
+        map[el.employee_id] = hours;
+      } else {
+        map[el.employee_id] = new Set();
+      }
+    });
+    setHourMap(map);
+  }, [dayIdx, shifts, empLocs, dateStr]);
+
+  function toggle(empId: string, hour: number) {
+    setHourMap((prev) => {
+      const s = new Set(prev[empId] ?? []);
+      if (s.has(hour)) s.delete(hour);
+      else s.add(hour);
+      return { ...prev, [empId]: new Set(s) };
+    });
+  }
+
+  async function saveDay() {
+    if (!user || !locationId) return;
+    setSaving(true);
+    try {
+      for (const el of empLocs) {
+        const hours = Array.from(hourMap[el.employee_id] ?? []).sort((a, b) => a - b);
+        const existing = shiftMap[el.employee_id]?.[dateStr];
+
+        if (!hours.length) {
+          if (existing && existing.status !== "cancelled") {
+            await supabase.from("shift_schedules").update({ status: "cancelled" }).eq("id", existing.id);
+          }
+          continue;
+        }
+
+        const start_time = `${String(hours[0]).padStart(2, "0")}:00`;
+        const end_time = `${String(hours[hours.length - 1] + 1).padStart(2, "0")}:00`;
+
+        if (existing) {
+          await supabase
+            .from("shift_schedules")
+            .update({ start_time, end_time, break_minutes: 0, status: "draft" })
+            .eq("id", existing.id);
+        } else {
+          await supabase.from("shift_schedules").insert({
+            employee_id: el.employee_id,
+            location_id: locationId,
+            scheduled_date: dateStr,
+            start_time,
+            end_time,
+            break_minutes: 0,
+            notes: null,
+            created_by: user.id,
+            company_id: el.company_id,
+            status: "draft",
+          });
+        }
+      }
+      qc.invalidateQueries({ queryKey: ["shifts"] });
+      toast.success("Tag gespeichert");
+    } catch {
+      toast.error("Fehler beim Speichern");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Weekly summary
+  const weekSummary = empLocs
+    .map((el) => {
+      const emp = el.employees;
+      if (!emp) return null;
+      const plannedMins = weekDays.reduce((tot, d) => {
+        const sh = shiftMap[el.employee_id]?.[toDateStr(d)];
+        if (!sh || sh.status === "cancelled") return tot;
+        return tot + calcShiftMinutes(sh.start_time, sh.end_time, sh.break_minutes);
+      }, 0);
+      return {
+        emp,
+        plannedH: plannedMins / 60,
+        sollH: el.hours_per_week,
+        diff: plannedMins / 60 - el.hours_per_week,
+      };
+    })
+    .filter(Boolean) as { emp: Pick<Employee, "id" | "first_name" | "last_name">; plannedH: number; sollH: number; diff: number }[];
+
+  const weekTotal = weekSummary.reduce((s, r) => s + r.plannedH, 0);
+  const firmaDiff = weekSummary.reduce((s, r) => s + r.diff, 0);
+  const weekLabel = `KW ${format(weekStart, "ww")} · ${format(weekStart, "d. MMM", { locale: de })} – ${format(addDays(weekStart, 6), "d. MMM yyyy", { locale: de })}`;
+
+  return (
+    <div className="space-y-5">
+      {/* Week nav + Day tabs */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={() => setWeekStart(addDays(weekStart, -7))} className="rounded-lg border border-gray-200 p-2 hover:bg-gray-50 transition">
+          <ChevronLeft className="h-4 w-4 text-gray-500" strokeWidth={1.5} />
+        </button>
+        <span className="text-sm font-medium text-gray-700 min-w-[240px] text-center">{weekLabel}</span>
+        <button onClick={() => setWeekStart(addDays(weekStart, 7))} className="rounded-lg border border-gray-200 p-2 hover:bg-gray-50 transition">
+          <ChevronRight className="h-4 w-4 text-gray-500" strokeWidth={1.5} />
+        </button>
+        <div className="flex gap-1 ml-2">
+          {DAYS_DE.map((d, i) => (
+            <button
+              key={i}
+              onClick={() => setDayIdx(i)}
+              className={`flex flex-col items-center rounded-xl px-3 py-1.5 text-xs font-medium transition min-w-[46px] ${
+                i === dayIdx
+                  ? "bg-[#4F772D] text-white shadow-sm"
+                  : "bg-white border border-gray-200 text-gray-500 hover:border-[#4F772D]/50 hover:text-[#4F772D]"
+              }`}
+            >
+              <span className="font-semibold">{d}</span>
+              <span className={`text-[9px] font-normal mt-0.5 ${i === dayIdx ? "text-white/80" : "text-gray-400"}`}>
+                {format(weekDays[i], "d.M.")}
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="flex-1" />
+        <button
+          onClick={saveDay}
+          disabled={saving}
+          className="flex items-center gap-2 rounded-xl bg-[#4F772D] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#31572C] transition disabled:opacity-50"
+        >
+          <Check className="h-4 w-4" strokeWidth={2} />
+          {saving ? "Speichern…" : "Tag speichern"}
+        </button>
+      </div>
+
+      {/* Hour grid */}
+      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+        <table className="min-w-full border-collapse">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2.5 text-left text-xs font-semibold text-gray-500 min-w-[160px] border-r border-gray-200">
+                Mitarbeiter·in
+              </th>
+              {HOUR_SLOTS.map((h) => (
+                <th
+                  key={h}
+                  className="px-0 py-2 text-center text-[10px] font-medium text-gray-400 min-w-[36px] border-l border-gray-100"
+                >
+                  {h}–{h + 1}
+                </th>
+              ))}
+              <th className="px-2 py-2 text-center text-[11px] font-semibold text-[#4F772D] min-w-[56px] border-l border-gray-200">
+                h / Tag
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {empLocs.map((el) => {
+              const emp = el.employees;
+              if (!emp) return null;
+              const active = hourMap[el.employee_id] ?? new Set<number>();
+              const dayH = active.size;
+
+              return (
+                <tr key={el.employee_id} className="hover:bg-gray-50/50 transition">
+                  <td className="sticky left-0 z-10 bg-white px-3 py-2 text-xs font-medium text-gray-800 border-r border-gray-100 whitespace-nowrap">
+                    {emp.first_name} {emp.last_name}
+                  </td>
+                  {HOUR_SLOTS.map((h) => {
+                    const isOn = active.has(h);
+                    return (
+                      <td key={h} className="p-0.5 text-center border-l border-gray-100">
+                        <button
+                          onClick={() => toggle(el.employee_id, h)}
+                          title={`${h}:00–${h + 1}:00`}
+                          className={`w-7 h-7 rounded-md text-[11px] font-black transition select-none ${
+                            isOn
+                              ? "bg-[#4F772D] text-white hover:bg-[#31572C]"
+                              : "bg-gray-100 text-transparent hover:bg-gray-200"
+                          }`}
+                        >
+                          X
+                        </button>
+                      </td>
+                    );
+                  })}
+                  <td className="px-2 py-2 text-center border-l border-gray-200">
+                    <span className={`text-xs font-bold ${dayH > 0 ? "text-[#4F772D]" : "text-gray-300"}`}>
+                      {dayH > 0 ? dayH.toFixed(2) : "–"}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+
+            {/* TAGESST. */}
+            <tr className="bg-[#4F772D]/5 border-t-2 border-[#4F772D]/20">
+              <td className="sticky left-0 z-10 bg-[#4F772D]/5 px-3 py-2 text-xs font-bold text-[#4F772D] border-r border-[#4F772D]/10">
+                TAGESST.
+              </td>
+              {HOUR_SLOTS.map((h) => {
+                const n = empLocs.filter((el) => (hourMap[el.employee_id] ?? new Set()).has(h)).length;
+                return (
+                  <td key={h} className="p-1 text-center border-l border-gray-100">
+                    <span className={`text-[10px] font-bold ${n > 0 ? "text-[#4F772D]" : "text-transparent"}`}>{n}</span>
+                  </td>
+                );
+              })}
+              <td className="px-2 py-2 text-center border-l border-gray-200">
+                <span className="text-xs font-bold text-[#4F772D]">
+                  {empLocs.reduce((s, el) => s + (hourMap[el.employee_id]?.size ?? 0), 0).toFixed(2)}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Weekly summary — like paper footer */}
+      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-200">
+          <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Geleistete Stunden</p>
+          <p className="text-sm font-bold text-[#4F772D]">
+            WOCHENSTUNDEN GESAMT: {weekTotal.toFixed(2)}
+          </p>
+        </div>
+        <table className="min-w-full text-xs">
+          <thead>
+            <tr className="border-b border-gray-100 bg-gray-50/50 text-[10px] text-gray-400 uppercase tracking-wide">
+              <th className="px-4 py-2 text-left font-semibold">Mitarbeiter·in</th>
+              <th className="px-3 py-2 text-center font-semibold">Geleistete St.</th>
+              <th className="px-3 py-2 text-center font-semibold">N.St. (Soll)</th>
+              <th className="px-3 py-2 text-center font-semibold">Differenz</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {weekSummary.map((r) => (
+              <tr key={r.emp.id}>
+                <td className="px-4 py-2 font-medium text-gray-800">
+                  {r.emp.first_name} {r.emp.last_name}
+                </td>
+                <td className="px-3 py-2 text-center font-bold text-gray-700">{r.plannedH.toFixed(2)}</td>
+                <td className="px-3 py-2 text-center text-gray-500">{r.sollH.toFixed(2)}</td>
+                <td
+                  className={`px-3 py-2 text-center font-bold ${
+                    r.diff > 0.01 ? "text-[#4F772D]" : r.diff < -0.01 ? "text-red-500" : "text-gray-400"
+                  }`}
+                >
+                  {r.diff >= 0 ? "+" : ""}{r.diff.toFixed(2)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-gray-200 bg-[#4F772D]/5">
+              <td className="px-4 py-2.5 font-semibold text-[#4F772D] text-xs">Mehrstunden Gesamtfirma</td>
+              <td colSpan={2} />
+              <td
+                className={`px-3 py-2.5 text-center font-bold text-xs ${
+                  firmaDiff >= 0 ? "text-[#4F772D]" : "text-red-500"
+                }`}
+              >
+                {firmaDiff >= 0 ? "+" : ""}{firmaDiff.toFixed(2)}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
   );
 }
