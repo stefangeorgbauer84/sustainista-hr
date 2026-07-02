@@ -1,0 +1,62 @@
+# GitHub Actions CI — Standard-Template für alle Next.js/Supabase-Projekte
+#
+# Verwendung: .github/workflows/ci.yml in jedem Projekt-Repo kopieren
+# Anpassen: type-check-Script-Name (tsc --noEmit oder npm run type-check)
+#
+# Dieses Template deckt ab:
+#   - Lint
+#   - TypeScript-Typecheck
+#   - Next.js Build (mit Dummy-Env-Vars damit Build nicht scheitert)
+#   - Tests (wenn vorhanden)
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    name: Lint · Typecheck · Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af  # v4.1.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        # Monorepos: package.json "typecheck" script delegiert an das richtige Sub-Paket
+        # mit den korrekten tsconfig-Paths. Direkt npx tsc würde Root-tsconfig verwenden.
+        run: npm run typecheck --if-present || npx tsc --noEmit
+
+      - name: Build
+        # Dummy-Env-Vars damit next build nicht wegen fehlender NEXT_PUBLIC_ vars scheitert.
+        # Echte Werte laufen nur in Vercel-Production/Preview, nicht im CI-Build-Check.
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          # Strukturell valides Dummy-JWT — verhindert Fehler wenn Code das JWT-Format prüft
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzAwMDAwMDAsImV4cCI6MjA0NTM2MDAwMH0.placeholder-signature
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzAwMDAwMDAsImV4cCI6MjA0NTM2MDAwMH0.placeholder-signature
+          NEXT_PUBLIC_SANITY_PROJECT_ID: placeholder
+          NEXT_PUBLIC_SANITY_DATASET: production
+          NEXT_PUBLIC_SANITY_API_VERSION: '2024-01-01'
+          SKIP_ENV_VALIDATION: '1'
+        run: npm run build
+
+      - name: Test
+        run: npm run test --if-present
