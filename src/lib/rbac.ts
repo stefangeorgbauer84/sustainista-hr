@@ -1,5 +1,8 @@
 // Application-level role permission utilities.
 // Database RLS controls row access; this controls column/field visibility in UI.
+// Prefer hasPermission() from @/lib/permissions for new code.
+
+export { hasPermission, stripSensitiveForRole } from "@/lib/permissions";
 
 type Role =
   | "super_admin" | "company_admin" | "hr_manager" | "hr_staff"

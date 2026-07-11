@@ -3,10 +3,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getAllPendingAbsences, approveAbsence, rejectAbsence } from "@/lib/leave";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
-import { Check, X, Calendar, Users, TrendingUp } from "lucide-react";
+import { Check, X, Calendar, TrendingUp, CheckCheck, Users } from "lucide-react";
 import type { Absence } from "@/types";
 import { useState } from "react";
 
@@ -35,6 +36,7 @@ type Tab = typeof TABS[number]["key"];
 
 export default function AdminLeavePage() {
   const qc = useQueryClient();
+  const { user } = useAuth();
   const [tab, setTab] = useState<Tab>("pending");
   const [rejectTarget, setRejectTarget] = useState<string | null>(null);
   const [rejectionNote, setRejectionNote] = useState("");
@@ -99,7 +101,18 @@ export default function AdminLeavePage() {
 
   const bulkApproveMutation = useMutation({
     mutationFn: async () => {
-      await Promise.all(pending.map(p => approveAbsence(p.id)));
+      const ids = pending.map(p => p.id);
+      if (ids.length === 0) return;
+      // Single UPDATE = atomic; Promise.all(N calls) was non-atomic
+      const { error } = await supabase
+        .from("absences")
+        .update({
+          status: "approved",
+          approved_by: user?.id ?? null,
+          approved_at: new Date().toISOString(),
+        })
+        .in("id", ids);
+      if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pending-leaves"] });
@@ -129,14 +142,14 @@ export default function AdminLeavePage() {
             disabled={bulkApproveMutation.isPending}
             className="flex items-center gap-1.5 rounded-lg bg-[#4F772D] px-3 py-2 text-sm font-medium text-white hover:bg-[#31572C] disabled:opacity-60 transition"
           >
-            <Check className="h-4 w-4" strokeWidth={2} />
+            <CheckCheck className="h-4 w-4" strokeWidth={2} />
             {bulkApproveMutation.isPending ? "Wird genehmigt…" : `Alle ${pending.length} genehmigen`}
           </button>
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
+      {/* Tabs — overflow-x-auto for mobile */}
+      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto scrollbar-none -mx-1 px-1">
         {TABS.map(t => {
           const Icon = t.icon;
           return (

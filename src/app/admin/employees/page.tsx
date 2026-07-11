@@ -12,7 +12,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Plus, X, Pencil, Calendar, Eye, Search, ChevronUp, ChevronDown,
-  ChevronLeft, ChevronRight, AlertTriangle, Baby,
+  ChevronLeft, ChevronRight, UserCheck, UserX, UserMinus, Shield,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
@@ -100,6 +100,7 @@ export default function EmployeesPage() {
   }, [search]);
 
   // Reset page when filters change
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- bewusster Reset bei Filterwechsel
   useEffect(() => { setPage(0); }, [kvFilter, kstFilter, typeFilter, showInactive]);
 
   const { data: kvs = [] } = useQuery<{ id: string; name: string }[]>({
@@ -218,12 +219,12 @@ export default function EmployeesPage() {
     onError: (e: Error) => toast.error(e.message ?? "Fehler beim Speichern"),
   });
 
-  const SortIcon = ({ field }: { field: SortField }) => {
+  function sortIcon(field: SortField) {
     if (sortBy !== field) return <ChevronUp className="h-3 w-3 text-gray-300" strokeWidth={1.5} />;
     return sortDir === "asc"
       ? <ChevronUp className="h-3 w-3 text-[#4F772D]" strokeWidth={1.5} />
       : <ChevronDown className="h-3 w-3 text-[#4F772D]" strokeWidth={1.5} />;
-  };
+  }
 
   return (
     <div className="space-y-4">
@@ -331,12 +332,12 @@ export default function EmployeesPage() {
       {/* Table — desktop */}
       <div className="hidden md:block rounded-xl border border-gray-200 bg-white overflow-hidden">
         <table className="min-w-full divide-y divide-gray-100">
-          <thead className="bg-gray-50">
+          <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
             <tr>
               <th className="px-4 py-3 text-left">
                 <button onClick={() => toggleSort("last_name")}
                   className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700">
-                  Name <SortIcon field="last_name" />
+                  Name {sortIcon("last_name")}
                 </button>
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">DNR</th>
@@ -346,13 +347,13 @@ export default function EmployeesPage() {
               <th className="px-4 py-3 text-right">
                 <button onClick={() => toggleSort("entry_date")}
                   className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700 ml-auto">
-                  <SortIcon field="entry_date" /> Eintritt
+                  {sortIcon("entry_date")} Eintritt
                 </button>
               </th>
               <th className="px-4 py-3 text-right">
                 <button onClick={() => toggleSort("brutto")}
                   className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700 ml-auto">
-                  <SortIcon field="brutto" /> Brutto
+                  {sortIcon("brutto")} Brutto
                 </button>
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Status</th>
@@ -364,11 +365,11 @@ export default function EmployeesPage() {
               <tr><td colSpan={9} className="px-4 py-10 text-center text-sm text-gray-400">Wird geladen…</td></tr>
             ) : pageData.length === 0 ? (
               <tr><td colSpan={9} className="px-4 py-10 text-center text-sm text-gray-400">Keine Mitarbeiter gefunden</td></tr>
-            ) : pageData.map(emp => {
+            ) : pageData.map((emp, idx) => {
               const status = getStatus(emp);
               const brutto = getBrutto(emp);
               return (
-                <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
+                <tr key={emp.id} className={`hover:bg-[#4F772D]/5 transition-colors ${idx % 2 === 1 ? "bg-gray-50/60" : "bg-white"}`}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#4F772D]/10 text-xs font-semibold text-[#4F772D]">
@@ -399,14 +400,21 @@ export default function EmployeesPage() {
                       : <span className="text-gray-300">••••</span>}
                   </td>
                   <td className="px-4 py-3">
-                    {status === "karenz" && (
+                    {status === "karenz" ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">
-                        <Baby className="h-3 w-3" strokeWidth={1.5} /> Karenz
+                        <UserMinus className="h-3 w-3" strokeWidth={1.5} /> Karenz
                       </span>
-                    )}
-                    {status === "pfaendung" && showPfaendung && (
+                    ) : status === "pfaendung" && showPfaendung ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700">
-                        <AlertTriangle className="h-3 w-3" strokeWidth={1.5} /> Pfändung
+                        <Shield className="h-3 w-3" strokeWidth={1.5} /> Pfändung
+                      </span>
+                    ) : emp.is_active ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-700">
+                        <UserCheck className="h-3 w-3" strokeWidth={1.5} /> Aktiv
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">
+                        <UserX className="h-3 w-3" strokeWidth={1.5} /> Ausgetreten
                       </span>
                     )}
                   </td>
@@ -462,14 +470,21 @@ export default function EmployeesPage() {
                   </div>
                 </div>
                 <div className="flex flex-col gap-1">
-                  {status === "karenz" && (
+                  {status === "karenz" ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">
-                      <Baby className="h-3 w-3" strokeWidth={1.5} /> Karenz
+                      <UserMinus className="h-3 w-3" strokeWidth={1.5} /> Karenz
                     </span>
-                  )}
-                  {status === "pfaendung" && showPfaendung && (
+                  ) : status === "pfaendung" && showPfaendung ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700">
-                      <AlertTriangle className="h-3 w-3" strokeWidth={1.5} /> Pfändung
+                      <Shield className="h-3 w-3" strokeWidth={1.5} /> Pfändung
+                    </span>
+                  ) : emp.is_active ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-700">
+                      <UserCheck className="h-3 w-3" strokeWidth={1.5} /> Aktiv
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">
+                      <UserX className="h-3 w-3" strokeWidth={1.5} /> Ausgetreten
                     </span>
                   )}
                 </div>

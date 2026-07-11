@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
-import type { Employee, TimeRecord, Absence, Document, LeaveBalance, EmployeeLocation, Location } from "@/types";
+import type { Employee, TimeRecord, Absence, Document, LeaveBalance } from "@/types";
 import { calcWorkedMinutes, formatDuration } from "@/lib/time";
 import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
@@ -14,7 +14,7 @@ import { useAuth } from "@/context/AuthContext";
 import { canSeePfaendung, canSeeBrutto } from "@/lib/rbac";
 import {
   ArrowLeft, Clock, Calendar, FileText,
-  Mail, Phone, Building, CreditCard, Download, MapPin,
+  Mail, Phone, Building, CreditCard, Download,
   Pencil, X, Save, AlertTriangle, Baby, AlertCircle, ShieldOff,
 } from "lucide-react";
 
@@ -25,7 +25,6 @@ const statusColors: Record<string, string> = {
 };
 
 type AbsenceWithType = Absence & { absence_types: { code: string; name: string } | null };
-type EmpLocWithLocation = EmployeeLocation & { locations: Location | null };
 
 type CF = {
   brutto?: string;
@@ -35,6 +34,9 @@ type CF = {
   naechste_gehaltsaenderung?: string;
   anrechnung_jahre?: string;
   kst_raw?: string;
+  pfaendung?: string;
+  pfaendung_betrag?: string;
+  pfaendung_glaeubiger?: string;
 };
 
 type EditForm = {
@@ -160,18 +162,6 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
     enabled: !!id,
   });
 
-  const { data: empLocs = [] } = useQuery<EmpLocWithLocation[]>({
-    queryKey: ["emp-locations", id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("employee_locations").select("*, locations(*)")
-        .eq("employee_id", id).order("is_primary", { ascending: false });
-      if (error) throw error;
-      return (data ?? []) as unknown as EmpLocWithLocation[];
-    },
-    enabled: !!id,
-  });
-
   const { data: docs = [] } = useQuery<Document[]>({
     queryKey: ["docs-detail", id],
     queryFn: async () => {
@@ -268,17 +258,27 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
   const dsgvoMutation = useMutation({
     mutationFn: async () => {
       if (!employee) return;
+      // DSGVO: anonymize ALL personal data — extend this list when new PII fields are added
       const anonymizedCf: CF = {
         ...cf,
         brutto: undefined,
         notizen: undefined,
+        pfaendung: undefined,
+        pfaendung_betrag: undefined,
+        pfaendung_glaeubiger: undefined,
         kst_raw: cf.kst_raw,
       };
       const { error } = await supabase.from("employees").update({
         contact_email: null,
         contact_phone: null,
         bank_iban: null,
+        bank_bic: null,
+        bank_name: null,
         birth_date: null,
+        svnr: null,
+        tax_id: null,
+        tax_class: null,
+        address: {},
         custom_fields: anonymizedCf,
       }).eq("id", id);
       if (error) throw error;
@@ -563,30 +563,6 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
           </div>
         </div>
       </div>
-
-      {/* Filialen */}
-      {empLocs.length > 0 && (
-        <div className="rounded-xl border border-gray-200 bg-white">
-          <div className="border-b border-gray-100 px-5 py-4 flex items-center gap-2">
-            <MapPin className="h-4 w-4 text-gray-400" strokeWidth={1.5} />
-            <h2 className="text-sm font-medium text-gray-900">Filialen ({empLocs.length})</h2>
-          </div>
-          <div className="divide-y divide-gray-50">
-            {empLocs.map((el) => (
-              <div key={el.id} className="flex items-center justify-between px-5 py-3">
-                <div>
-                  <p className="text-sm font-medium text-gray-900">{el.locations?.name ?? "—"}</p>
-                  <p className="text-xs text-gray-400">
-                    {el.locations?.address?.city}
-                    {el.is_primary && <span className="ml-2 rounded-full bg-[#4F772D]/10 px-1.5 py-0.5 text-[10px] text-[#4F772D]">Hauptfiliale</span>}
-                  </p>
-                </div>
-                <p className="text-sm font-semibold text-gray-700">{el.hours_per_week}h/Woche</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Dokumente */}
       <div className="rounded-xl border border-gray-200 bg-white">
