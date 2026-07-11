@@ -60,7 +60,7 @@ function LoginForm() {
     try {
       await login(data.email, data.password);
       toast.success("Willkommen zurück!");
-      window.location.href = "/dashboard";
+      window.location.assign("/dashboard");
     } catch {
       toast.error("Login fehlgeschlagen. Bitte E-Mail und Passwort prüfen.");
       setLoading(false);

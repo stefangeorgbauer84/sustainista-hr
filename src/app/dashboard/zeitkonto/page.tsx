@@ -4,13 +4,14 @@ import { useAuth } from "@/context/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import type { TimeRecord } from "@/types";
-import { calcWorkedMinutes, formatDuration } from "@/lib/time";
+import { calcWorkedMinutes, formatDuration, selectableYears } from "@/lib/time";
 import { isHoliday } from "@/lib/holidays";
 import { format, getDaysInMonth, isWeekend } from "date-fns";
 import { de } from "date-fns/locale";
 import { toast } from "sonner";
 import { TrendingUp, TrendingDown, Clock, Minus, Copy } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 
 interface MonthSummary {
   year: number;
@@ -35,25 +36,24 @@ function getTargetMinutes(year: number, month: number, hoursPerWeek = 40): numbe
 export default function ZeitkontoPage() {
   const { employee } = useAuth();
   const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
 
+  // Ganzes Jahr; im laufenden Jahr nur bis zum aktuellen Monat (kein leeres Soll für die Zukunft)
+  const lastMonth = year === now.getFullYear() ? now.getMonth() + 1 : 12;
   const months: { year: number; month: number }[] = [];
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push({ year: d.getFullYear(), month: d.getMonth() + 1 });
-  }
-
-  const sixMonthsAgo = format(new Date(now.getFullYear(), now.getMonth() - 5, 1), "yyyy-MM-dd");
+  for (let m = 1; m <= lastMonth; m++) months.push({ year, month: m });
 
   const { data: allRecords = [], isLoading } = useQuery<TimeRecord[]>({
-    queryKey: ["zeitkonto", employee?.id],
+    queryKey: ["zeitkonto", employee?.id, year],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("time_records")
         .select("*")
         .eq("employee_id", employee!.id)
-        .gte("work_date", sixMonthsAgo)
+        .gte("work_date", `${year}-01-01`)
+        .lte("work_date", `${year}-12-31`)
         .not("end_time", "is", null)
-        .limit(500);
+        .limit(1000);
       if (error) throw error;
       return (data ?? []) as TimeRecord[];
     },
@@ -76,7 +76,7 @@ export default function ZeitkontoPage() {
 
   function handleCopy() {
     const lines = [
-      `Zeitkonto-Saldo (${format(new Date(months[0].year, months[0].month - 1), "MMM yyyy", { locale: de })} – ${format(new Date(months[months.length-1].year, months[months.length-1].month - 1), "MMM yyyy", { locale: de })})`,
+      `Zeitkonto-Saldo ${year}`,
       ...summaries.map(m => `${m.label}: ${m.diff >= 0 ? "+" : ""}${formatDuration(Math.abs(m.diff))}`),
       `Gesamt: ${totalDiff >= 0 ? "+" : ""}${formatDuration(Math.abs(totalDiff))}`,
     ];
@@ -88,15 +88,24 @@ export default function ZeitkontoPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-gray-900">Zeitkonto</h1>
-        <p className="mt-0.5 text-sm text-gray-500">Überstunden-Saldo der letzten 6 Monate</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900">Zeitkonto</h1>
+          <p className="mt-0.5 text-sm text-gray-500">Überstunden-Saldo pro Monat</p>
+        </div>
+        <select
+          value={year}
+          onChange={e => setYear(Number(e.target.value))}
+          className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 focus:border-[#4F772D] focus:outline-none"
+        >
+          {selectableYears().map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
       </div>
 
       <div className={`rounded-2xl border p-6 ${totalDiff > 0 ? "border-[#4F772D]/30 bg-[#4F772D]/5" : totalDiff < -60 * 60 ? "border-red-200 bg-red-50" : "border-gray-200 bg-white"}`}>
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm text-gray-500">Gesamtsaldo (6 Monate)</p>
+            <p className="text-sm text-gray-500">Gesamtsaldo {year}</p>
             <p className={`mt-1 text-4xl font-bold ${totalDiff > 0 ? "text-[#4F772D]" : totalDiff < 0 ? "text-red-500" : "text-gray-900"}`}>
               {totalDiff >= 0 ? "+" : ""}{formatDuration(Math.abs(totalDiff))}
             </p>

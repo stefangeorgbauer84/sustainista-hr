@@ -4,25 +4,36 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import type { Employee, TimeRecord } from "@/types";
-import { calcWorkedMinutes, formatDuration } from "@/lib/time";
+import { calcWorkedMinutes, formatDuration, monthRange, selectableYears } from "@/lib/time";
 import { toast } from "sonner";
 import { useState } from "react";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, addDays } from "date-fns";
 import { de } from "date-fns/locale";
-import { Check, X, Clock, Coffee, AlertTriangle, Plus, Download, CheckCheck } from "lucide-react";
+import { Check, X, Clock, Coffee, AlertTriangle, Plus, Download, CheckCheck, Trash2 } from "lucide-react";
+
+type BulkRow = { work_date: string; start_time: string; end_time: string; break_minutes: string };
+
+const emptyRow = (date: string): BulkRow => ({
+  work_date: date, start_time: "08:00", end_time: "16:00", break_minutes: "30",
+});
+
+/** Nächster Werktag (Mo–Fr) nach dem gegebenen Datum — für schnelles Nachtragen ganzer Monate. */
+function nextWorkday(dateStr: string): string {
+  let d = addDays(parseISO(dateStr), 1);
+  while (d.getDay() === 0 || d.getDay() === 6) d = addDays(d, 1);
+  return format(d, "yyyy-MM-dd");
+}
 
 export default function AdminTimePage() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year] = useState(now.getFullYear());
+  const [year, setYear] = useState(now.getFullYear());
   const [selectedEmp, setSelectedEmp] = useState("all");
   const [showManual, setShowManual] = useState(false);
-  const [manual, setManual] = useState({
-    employee_id: "", work_date: format(now, "yyyy-MM-dd"),
-    start_time: "08:00", end_time: "16:00", break_minutes: "30",
-  });
+  const [bulkEmployeeId, setBulkEmployeeId] = useState("");
+  const [bulkRows, setBulkRows] = useState<BulkRow[]>([emptyRow(format(now, "yyyy-MM-dd"))]);
 
   const { data: employees = [] } = useQuery<Employee[]>({
     queryKey: ["all-employees"],
@@ -38,8 +49,7 @@ export default function AdminTimePage() {
     },
   });
 
-  const start = `${year}-${String(month).padStart(2, "0")}-01`;
-  const end = `${year}-${String(month).padStart(2, "0")}-31`;
+  const { start, end } = monthRange(year, month);
 
   const { data: entries = [], isLoading } = useQuery<TimeRecord[]>({
     queryKey: ["all-time-entries", year, month, selectedEmp],
@@ -100,28 +110,50 @@ export default function AdminTimePage() {
     onError: () => toast.error("Fehler beim Bulk-Genehmigen"),
   });
 
-  const manualMutation = useMutation({
+  const bulkInsertMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from("time_records").insert({
-        employee_id: manual.employee_id,
-        work_date: manual.work_date,
-        start_time: manual.start_time,
-        end_time: manual.end_time,
-        break_minutes: Number(manual.break_minutes),
-        status: "approved",
-        approved_by: user?.id,
-        created_via: "admin",
-      });
+      const emp = employees.find(e => e.id === bulkEmployeeId);
+      if (!emp) throw new Error("Kein Mitarbeiter gewählt");
+      const validRows = bulkRows.filter(r => r.work_date && r.start_time && r.end_time);
+      if (validRows.length === 0) throw new Error("Keine gültigen Zeilen");
+      const invalid = validRows.find(r => r.end_time <= r.start_time);
+      if (invalid) throw new Error(`Endzeit vor Startzeit am ${invalid.work_date}`);
+      const { error } = await supabase.from("time_records").insert(
+        validRows.map(r => ({
+          employee_id: emp.id,
+          company_id: emp.company_id,
+          work_date: r.work_date,
+          start_time: r.start_time,
+          end_time: r.end_time,
+          break_minutes: Number(r.break_minutes) || 0,
+          status: "approved",
+          approved_by: user?.id,
+          approved_at: new Date().toISOString(),
+          created_via: "admin",
+        }))
+      );
       if (error) throw error;
+      return validRows.length;
     },
-    onSuccess: () => {
+    onSuccess: (count) => {
       qc.invalidateQueries({ queryKey: ["all-time-entries"] });
-      toast.success("Eintrag erfasst und genehmigt");
+      toast.success(`${count} ${count === 1 ? "Eintrag" : "Einträge"} erfasst und genehmigt`);
       setShowManual(false);
-      setManual({ employee_id: "", work_date: format(now, "yyyy-MM-dd"), start_time: "08:00", end_time: "16:00", break_minutes: "30" });
+      setBulkRows([emptyRow(format(now, "yyyy-MM-dd"))]);
     },
-    onError: () => toast.error("Fehler beim Erfassen"),
+    onError: (err: Error) => toast.error(err.message || "Fehler beim Erfassen"),
   });
+
+  function updateRow(i: number, patch: Partial<BulkRow>) {
+    setBulkRows(rows => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  }
+
+  function addRow() {
+    setBulkRows(rows => {
+      const last = rows[rows.length - 1];
+      return [...rows, { ...last, work_date: nextWorkday(last.work_date) }];
+    });
+  }
 
   function exportCSV() {
     const empMap = Object.fromEntries(employees.map(e => [e.id, e]));
@@ -246,6 +278,13 @@ export default function AdminTimePage() {
               <option value="all">Alle Mitarbeiter</option>
               {employees.map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
             </select>
+            <select
+              value={year}
+              onChange={e => setYear(Number(e.target.value))}
+              className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs text-gray-600 focus:border-[#4F772D] focus:outline-none"
+            >
+              {selectableYears().map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
             <div className="flex gap-1 flex-wrap">
               {MONTHS.map((m, i) => (
                 <button key={i} onClick={() => setMonth(i + 1)}
@@ -326,60 +365,70 @@ export default function AdminTimePage() {
         </div>
       </div>
 
-      {/* Manueller Eintrag Modal */}
+      {/* Manuelle Erfassung — ein oder mehrere Einträge (z.B. Nachtrag 2025) */}
       {showManual && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-gray-900">Zeiterfassung manuell erfassen</h3>
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-sm font-semibold text-gray-900">Zeiten erfassen</h3>
               <button onClick={() => setShowManual(false)} className="rounded-lg p-1.5 hover:bg-gray-100">
                 <X className="h-4 w-4 text-gray-400" strokeWidth={1.5} />
               </button>
             </div>
-            <div className="space-y-3">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">Mitarbeiter *</label>
-                <select value={manual.employee_id} onChange={e => setManual(p => ({ ...p, employee_id: e.target.value }))} className={inp}>
-                  <option value="">— bitte wählen —</option>
-                  {employees.map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">Datum *</label>
-                <input type="date" value={manual.work_date} onChange={e => setManual(p => ({ ...p, work_date: e.target.value }))} className={inp} />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">Start *</label>
-                  <input type="time" value={manual.start_time} onChange={e => setManual(p => ({ ...p, start_time: e.target.value }))} className={inp} />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">Ende *</label>
-                  <input type="time" value={manual.end_time} onChange={e => setManual(p => ({ ...p, end_time: e.target.value }))} className={inp} />
-                </div>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">Pause (Minuten)</label>
-                <input type="number" min="0" max="120" value={manual.break_minutes}
-                  onChange={e => setManual(p => ({ ...p, break_minutes: e.target.value }))} className={inp} />
-              </div>
-              <p className="text-[10px] text-gray-400">
-                Der Eintrag wird direkt als <strong>Genehmigt</strong> gespeichert (Admin-Erfassung).
-              </p>
+            <p className="mb-4 text-xs text-gray-400">
+              Beliebig viele Tage auf einmal — auch rückwirkend für 2025. Einträge werden direkt als <strong>Genehmigt</strong> gespeichert.
+            </p>
+            <div className="mb-3">
+              <label className="mb-1 block text-xs font-medium text-gray-700">Mitarbeiter *</label>
+              <select value={bulkEmployeeId} onChange={e => setBulkEmployeeId(e.target.value)} className={inp}>
+                <option value="">— bitte wählen —</option>
+                {employees.map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+              </select>
             </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button onClick={() => setShowManual(false)}
-                className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
-                Abbrechen
-              </button>
-              <button
-                onClick={() => manualMutation.mutate()}
-                disabled={!manual.employee_id || !manual.work_date || !manual.start_time || !manual.end_time || manualMutation.isPending}
-                className="flex items-center gap-1.5 rounded-lg bg-[#4F772D] px-4 py-2 text-sm font-medium text-white hover:bg-[#31572C] disabled:opacity-60 transition"
-              >
-                <Plus className="h-4 w-4" strokeWidth={2} />
-                {manualMutation.isPending ? "Wird gespeichert…" : "Eintrag speichern"}
-              </button>
+            <div className="space-y-2">
+              <div className="grid grid-cols-[1fr_100px_100px_90px_32px] gap-2 text-[11px] font-medium text-gray-500">
+                <span>Datum</span><span>Von</span><span>Bis</span><span>Pause (Min)</span><span />
+              </div>
+              {bulkRows.map((row, i) => (
+                <div key={i} className="grid grid-cols-[1fr_100px_100px_90px_32px] gap-2 items-center">
+                  <input type="date" value={row.work_date} onChange={e => updateRow(i, { work_date: e.target.value })} className={inp} />
+                  <input type="time" value={row.start_time} onChange={e => updateRow(i, { start_time: e.target.value })} className={inp} />
+                  <input type="time" value={row.end_time} onChange={e => updateRow(i, { end_time: e.target.value })} className={inp} />
+                  <input type="number" min="0" max="480" value={row.break_minutes} onChange={e => updateRow(i, { break_minutes: e.target.value })} className={inp} />
+                  <button
+                    onClick={() => setBulkRows(rows => rows.filter((_, idx) => idx !== i))}
+                    disabled={bulkRows.length === 1}
+                    className="rounded p-1.5 text-gray-300 hover:bg-red-50 hover:text-red-400 disabled:opacity-30 transition"
+                    title="Zeile entfernen"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={addRow}
+              className="mt-3 flex items-center gap-1.5 text-xs text-[#4F772D] hover:underline underline-offset-2"
+            >
+              <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+              Nächster Werktag ({format(parseISO(nextWorkday(bulkRows[bulkRows.length - 1].work_date)), "EEE, d. MMM", { locale: de })})
+            </button>
+            <div className="mt-5 flex items-center justify-between">
+              <p className="text-xs text-gray-400">{bulkRows.length} {bulkRows.length === 1 ? "Zeile" : "Zeilen"}</p>
+              <div className="flex gap-2">
+                <button onClick={() => setShowManual(false)}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
+                  Abbrechen
+                </button>
+                <button
+                  onClick={() => bulkInsertMutation.mutate()}
+                  disabled={!bulkEmployeeId || bulkInsertMutation.isPending}
+                  className="flex items-center gap-1.5 rounded-lg bg-[#4F772D] px-4 py-2 text-sm font-medium text-white hover:bg-[#31572C] disabled:opacity-60 transition"
+                >
+                  <Plus className="h-4 w-4" strokeWidth={2} />
+                  {bulkInsertMutation.isPending ? "Wird gespeichert…" : `${bulkRows.length > 1 ? `Alle ${bulkRows.length} speichern` : "Eintrag speichern"}`}
+                </button>
+              </div>
             </div>
           </div>
         </div>

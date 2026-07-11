@@ -8,10 +8,9 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Clock, Calendar, CalendarDays, FileText, Home, Users,
+  Clock, Calendar, FileText, Home, Users,
   BarChart2, LogOut, Leaf, User, TrendingUp, UserCheck,
-  Trophy, HeartPulse, Target, Lightbulb, ClipboardList, Globe,
-  Building2, LayoutGrid, MapPin, Settings, ShieldAlert, Download, Briefcase,
+  Globe, Building2, LayoutGrid, Settings, ShieldAlert, Download,
 } from "lucide-react";
 import { TourStartButton } from "@/components/layout/GuidedTour";
 
@@ -27,22 +26,13 @@ const employeeNav: NavItem[] = [
   { href: "/dashboard", label: "Übersicht", icon: <Home strokeWidth={1.5} className="h-4 w-4" /> },
   { href: "/dashboard/time", label: "Zeiterfassung", icon: <Clock strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "time" },
   { href: "/dashboard/leave", label: "Urlaub & Abwesenheit", icon: <Calendar strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "leave" },
-  { href: "/dashboard/calendar", label: "Teamkalender", icon: <Users strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "calendar" },
   { href: "/dashboard/documents", label: "Meine Dokumente", icon: <FileText strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "documents" },
   { href: "/dashboard/zeitkonto", label: "Zeitkonto", icon: <TrendingUp strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "zeitkonto" },
-  { href: "/dashboard/wins", label: "Meine Wins", icon: <Trophy strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "wins" },
-  { href: "/dashboard/schedule", label: "Dienstplan", icon: <CalendarDays strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "schedule" },
-  { href: "/dashboard/checkin", label: "Check-in", icon: <HeartPulse strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "checkin" },
-  { href: "/dashboard/okrs", label: "Meine OKRs", icon: <Target strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "okrs" },
-  { href: "/dashboard/kaizen", label: "Kaizen-Board", icon: <Lightbulb strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "kaizen" },
-  { href: "/dashboard/review", label: "Performance Review", icon: <ClipboardList strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "review" },
-  { href: "/dashboard/culture", label: "Kultur & Werte", icon: <Globe strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "culture" },
   { href: "/dashboard/profile", label: "Mein Profil", icon: <User strokeWidth={1.5} className="h-4 w-4" /> },
 ];
 
-function buildAdminNav(pendingCount: number, changeRequestCount: number): NavItem[] {
+function buildAdminNav(pendingCount: number): NavItem[] {
   return [
-    { href: "/admin/leadership", label: "Leadership", icon: <TrendingUp strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "leadership" },
     { href: "/admin", label: "Übersicht", icon: <Home strokeWidth={1.5} className="h-4 w-4" /> },
     { href: "/admin/employees", label: "Mitarbeiter", icon: <Users strokeWidth={1.5} className="h-4 w-4" /> },
     { href: "/admin/employees/status", label: "Status", icon: <ShieldAlert strokeWidth={1.5} className="h-4 w-4" /> },
@@ -52,17 +42,11 @@ function buildAdminNav(pendingCount: number, changeRequestCount: number): NavIte
       badge: pendingCount > 0 ? pendingCount : undefined,
       moduleKey: "onboarding",
     },
-    { href: "/admin/schedule", label: "Dienstplan", icon: <CalendarDays strokeWidth={1.5} className="h-4 w-4" />, badge: changeRequestCount > 0 ? changeRequestCount : undefined, moduleKey: "schedule" },
     { href: "/admin/time", label: "Zeiterfassung", icon: <Clock strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "time" },
     { href: "/admin/leave", label: "Urlaubsanträge", icon: <Calendar strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "leave" },
-    { href: "/admin/recruiting", label: "Recruiting", icon: <Briefcase strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "recruiting" },
-    { href: "/admin/pulse", label: "Team-Puls", icon: <HeartPulse strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "pulse" },
-    { href: "/admin/performance", label: "Performance", icon: <ClipboardList strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "performance" },
-    { href: "/admin/kaizen", label: "Kaizen-Board", icon: <Lightbulb strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "kaizen" },
     { href: "/admin/reports", label: "Reports", icon: <BarChart2 strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "reports" },
     { href: "/admin/reports/payroll", label: "Lohnexport", icon: <Download strokeWidth={1.5} className="h-4 w-4" /> },
     { href: "/admin/documents", label: "Dokumente", icon: <FileText strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "documents" },
-    { href: "/admin/locations", label: "Filialen", icon: <MapPin strokeWidth={1.5} className="h-4 w-4" />, moduleKey: "locations" },
   ];
 }
 
@@ -99,21 +83,8 @@ export default function Sidebar() {
     refetchInterval: 60_000,
   });
 
-  const { data: changeRequestCount = 0 } = useQuery({
-    queryKey: ["pending-change-requests-count"],
-    queryFn: async () => {
-      const { count } = await supabase
-        .from("schedule_change_requests")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "pending");
-      return count ?? 0;
-    },
-    enabled: isAdminUser,
-    refetchInterval: 60_000,
-  });
-
   const enabledModules = company?.settings?.enabledModules;
-  const rawNav = isAdminUser ? buildAdminNav(pendingCount, changeRequestCount) : employeeNav;
+  const rawNav = isAdminUser ? buildAdminNav(pendingCount) : employeeNav;
   const nav = enabledModules
     ? rawNav.filter(item => !item.moduleKey || enabledModules.includes(item.moduleKey))
     : rawNav;

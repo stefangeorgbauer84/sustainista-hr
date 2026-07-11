@@ -2,32 +2,21 @@
 
 import { useAuth } from "@/context/AuthContext";
 import { useQuery } from "@tanstack/react-query";
-import { useSearchParams } from "next/navigation";
 import { getRunningEntry, getTimeRecordsForEmployee, calcWorkedMinutes, formatDuration } from "@/lib/time";
 import { getAbsencesForEmployee, getLeaveBalance } from "@/lib/leave";
 import { supabase } from "@/lib/supabase";
 import type { TimeRecord } from "@/types";
-import { Clock, Calendar, FileText, TrendingUp, AlertCircle, Activity, MapPin } from "lucide-react";
+import { Clock, Calendar, FileText, TrendingUp, AlertCircle, Activity } from "lucide-react";
 import { format, parseISO, differenceInDays } from "date-fns";
 import { de } from "date-fns/locale";
 import Link from "next/link";
-import { toast } from "sonner";
-import { Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 const statusColors: Record<string, string> = {
   requested: "bg-amber-100 text-amber-700",
   approved: "bg-green-100 text-green-700",
   rejected: "bg-red-100 text-red-600",
 };
-
-function GCalNotice() {
-  const params = useSearchParams();
-  useEffect(() => {
-    if (params.get("gcal") === "connected") toast.success("Google Calendar verbunden!");
-    if (params.get("gcal") === "error") toast.error("Google Calendar Verbindung fehlgeschlagen.");
-  }, [params]);
-  return null;
-}
 
 function getElapsedLabel(startTime: string): string {
   const [h, m] = startTime.split(":").map(Number);
@@ -71,23 +60,6 @@ export default function DashboardPage() {
   const { data: leaveBalance } = useQuery({
     queryKey: ["leave-balance", employee?.id, now.getFullYear()],
     queryFn: () => getLeaveBalance(employee!.id, now.getFullYear()),
-    enabled: !!employee,
-  });
-
-  const { data: nextShift } = useQuery({
-    queryKey: ["next-shift", employee?.id],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("shift_schedules")
-        .select("scheduled_date, start_time, end_time, break_minutes, locations(name)")
-        .eq("employee_id", employee!.id)
-        .gte("scheduled_date", todayStr)
-        .eq("status", "published")
-        .order("scheduled_date", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      return data ?? null;
-    },
     enabled: !!employee,
   });
 
@@ -149,13 +121,8 @@ export default function DashboardPage() {
     ...recentRecords.map(r => ({ kind: "time" as const, date: r.created_at, id: r.id, data: r })),
   ].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 6);
 
-  const shiftLocations = nextShift as { locations?: { name: string } | null } | null;
-  const isToday = nextShift?.scheduled_date === todayStr;
-
   return (
     <div className="space-y-6">
-      <Suspense fallback={null}><GCalNotice /></Suspense>
-
       <div>
         <h1 className="text-xl font-semibold text-gray-900">
           {greeting()}, {employee?.first_name ?? "—"}
@@ -177,28 +144,6 @@ export default function DashboardPage() {
           </div>
           <Link href="/dashboard/time" className="ml-auto text-xs text-[#4F772D] underline underline-offset-2">
             Stoppen →
-          </Link>
-        </div>
-      )}
-
-      {/* Nächste / heutige Schicht */}
-      {nextShift && (
-        <div className="flex items-center gap-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
-          <Calendar className="h-4 w-4 shrink-0 text-blue-500" strokeWidth={1.5} />
-          <div>
-            <p className="text-sm font-medium text-blue-800">
-              {isToday ? "Heutiger Dienst:" : `Nächste Schicht — ${format(parseISO(nextShift.scheduled_date), "EEE, d. MMM", { locale: de })}:`}{" "}
-              <strong>{nextShift.start_time.slice(0, 5)} – {nextShift.end_time.slice(0, 5)}</strong>
-            </p>
-            {shiftLocations?.locations?.name && (
-              <p className="mt-0.5 flex items-center gap-1 text-xs text-blue-600">
-                <MapPin className="h-3 w-3" strokeWidth={1.5} />
-                {shiftLocations.locations.name.split(" · ")[0]}
-              </p>
-            )}
-          </div>
-          <Link href="/dashboard/schedule" className="ml-auto text-xs text-blue-600 underline underline-offset-2">
-            Dienstplan →
           </Link>
         </div>
       )}

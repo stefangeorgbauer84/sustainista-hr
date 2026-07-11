@@ -286,7 +286,7 @@ export default function OnboardingPage() {
             </div>
             <h2 className="text-lg font-semibold text-gray-900">Alles bereit!</h2>
             <p className="mt-2 text-sm text-gray-500">
-              Deine Daten wurden vollständig erfasst. Klicke auf „Absenden", um sie an die HR-Abteilung zu übermitteln.
+              Deine Daten wurden vollständig erfasst. Klicke auf „Absenden&quot;, um sie an die HR-Abteilung zu übermitteln.
               Du erhältst eine Benachrichtigung, sobald dein Konto freigeschaltet wurde.
             </p>
             <div className="mt-6 rounded-lg bg-gray-50 p-4 text-left text-sm space-y-1">

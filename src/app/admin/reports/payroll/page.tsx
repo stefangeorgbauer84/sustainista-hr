@@ -5,13 +5,15 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import type { Employee } from "@/types";
-import { FileSpreadsheet, FileText, AlertCircle, ArrowLeft } from "lucide-react";
+import { FileSpreadsheet, Download, AlertCircle, ArrowLeft, UserMinus, Shield, FileText } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 
 type CostCenter = { id: string; name: string };
 type KV = { id: string; name: string };
+
+type EmployeeStatus = "karenz" | "pfaendung" | "aktiv";
 
 type PayrollRow = {
   id: string;
@@ -22,7 +24,15 @@ type PayrollRow = {
   cost_center_id: string | null;
   kv_id: string | null;
   gross: number;
+  empStatus: EmployeeStatus;
 };
+
+function getEmployeeStatus(emp: Employee): EmployeeStatus {
+  const s = ((emp.custom_fields as Record<string, string>)?.status ?? "").trim().toLowerCase();
+  if (s.includes("karenz")) return "karenz";
+  if (s.includes("pfänd") || s.includes("pfaend")) return "pfaendung";
+  return "aktiv";
+}
 
 function parseGross(emp: Employee): number {
   const raw = (emp.custom_fields as Record<string, string>)?.brutto ?? "";
@@ -93,6 +103,7 @@ export default function PayrollExportPage() {
         cost_center_id: e.cost_center_id,
         kv_id: e.kv_id,
         gross: parseGross(e),
+        empStatus: getEmployeeStatus(e),
       })),
     [employees]
   );
@@ -158,6 +169,7 @@ export default function PayrollExportPage() {
       "KST / Filiale": r.cost_center_id ? (kstMap[r.cost_center_id] ?? "") : "",
       "Kollektivvertrag": r.kv_id ? (kvMap[r.kv_id] ?? "") : "",
       "Brutto (€)": r.gross > 0 ? r.gross : "",
+      "Status": r.empStatus === "karenz" ? "Karenz" : r.empStatus === "pfaendung" ? "Pfändung" : "",
       "Periode": `${String(month).padStart(2, "0")}/${year}`,
     }));
   }
@@ -214,6 +226,8 @@ export default function PayrollExportPage() {
 
   const periodLabel = `${MONTH_NAMES[month - 1]} ${year}`;
   const noGrossCount = rows.filter(r => r.gross === 0).length;
+  const karenzCount = rows.filter(r => r.empStatus === "karenz").length;
+  const pfaendungCount = rows.filter(r => r.empStatus === "pfaendung").length;
 
   return (
     <div className="space-y-5">
@@ -259,7 +273,7 @@ export default function PayrollExportPage() {
             disabled={loadingEmps || rows.length === 0 || logMutation.isPending}
             className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition"
           >
-            <FileText className="h-4 w-4" strokeWidth={1.5} />
+            <Download className="h-4 w-4" strokeWidth={1.5} />
             CSV
           </button>
           <button
@@ -302,6 +316,23 @@ export default function PayrollExportPage() {
         </div>
       )}
 
+      {karenzCount > 0 && (
+        <div className="flex gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
+          <UserMinus className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" strokeWidth={1.5} />
+          <p className="text-sm text-blue-800">
+            <strong>{karenzCount} Mitarbeiter</strong> in Karenz im Export — Brutto prüfen.
+          </p>
+        </div>
+      )}
+      {pfaendungCount > 0 && (
+        <div className="flex gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
+          <Shield className="mt-0.5 h-4 w-4 shrink-0 text-red-500" strokeWidth={1.5} />
+          <p className="text-sm text-red-800">
+            <strong>{pfaendungCount} Mitarbeiter</strong> mit Pfändung im Export — Pfändungsbetrag separat an Lohnverrechnung melden.
+          </p>
+        </div>
+      )}
+
       {/* Preview table */}
       <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
         <div className="border-b border-gray-100 px-5 py-3 flex items-center justify-between">
@@ -313,7 +344,7 @@ export default function PayrollExportPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-left text-xs font-medium text-gray-500">
+              <thead className="bg-gray-50 sticky top-0 z-10 text-left text-xs font-medium text-gray-500">
                 <tr>
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">DNR</th>
@@ -321,6 +352,8 @@ export default function PayrollExportPage() {
                   <th className="px-4 py-3">KV</th>
                   <th className="px-4 py-3">Art</th>
                   <th className="px-4 py-3 text-right">Brutto</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -342,6 +375,27 @@ export default function PayrollExportPage() {
                         ? `€ ${r.gross.toLocaleString("de-AT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                         : <span className="text-gray-300">—</span>}
                     </td>
+                    <td className="px-4 py-2.5">
+                      {r.empStatus === "karenz" && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+                          <UserMinus className="h-3 w-3" strokeWidth={1.5} /> Karenz
+                        </span>
+                      )}
+                      {r.empStatus === "pfaendung" && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700">
+                          <Shield className="h-3 w-3" strokeWidth={1.5} /> Pfändung
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <Link
+                        href={`/admin/reports/payroll/${r.id}`}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-[#4F772D] hover:underline underline-offset-2"
+                      >
+                        <FileText className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        Lohnzettel
+                      </Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -353,6 +407,7 @@ export default function PayrollExportPage() {
                   <td className="px-4 py-3 text-right text-sm font-bold text-gray-900">
                     € {totalGross.toLocaleString("de-AT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
+                  <td colSpan={2} />
                 </tr>
               </tfoot>
             </table>

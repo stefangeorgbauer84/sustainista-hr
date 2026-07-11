@@ -228,7 +228,8 @@ export default function AdminPage() {
               <div key={req.id} className="flex items-center justify-between px-5 py-3">
                 <div>
                   <p className="text-sm font-medium text-gray-900">
-                    {(req as any).employees?.first_name} {(req as any).employees?.last_name}
+                    {(req as { employees?: { first_name?: string; last_name?: string } }).employees?.first_name}{" "}
+                    {(req as { employees?: { first_name?: string; last_name?: string } }).employees?.last_name}
                   </p>
                   <p className="text-xs text-gray-400">
                     {format(parseISO(req.start_date), "d. MMM", { locale: de })} – {format(parseISO(req.end_date), "d. MMM yyyy", { locale: de })} · {req.working_days} Tage

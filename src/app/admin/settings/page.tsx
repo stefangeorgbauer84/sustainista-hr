@@ -5,10 +5,9 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import {
-  Clock, Calendar, CalendarDays, FileText, Users,
-  BarChart2, TrendingUp, UserCheck, Trophy, HeartPulse,
-  Target, Lightbulb, ClipboardList, Globe, MapPin, Settings,
-  Save, ToggleLeft, ToggleRight, Briefcase,
+  Clock, Calendar, FileText,
+  BarChart2, TrendingUp, UserCheck,
+  Settings, Save, ToggleLeft, ToggleRight,
 } from "lucide-react";
 
 interface ModuleConfig {
@@ -21,31 +20,16 @@ interface ModuleConfig {
 
 const ALL_MODULES: ModuleConfig[] = [
   // Admin
-  { key: "leadership", label: "Leadership", description: "Führungskräfte-Dashboard mit Team-KPIs", icon: <TrendingUp strokeWidth={1.5} className="h-5 w-5" />, section: "admin" },
   { key: "onboarding", label: "Onboarding", description: "Neue Mitarbeiter einarbeiten und freischalten", icon: <UserCheck strokeWidth={1.5} className="h-5 w-5" />, section: "admin" },
-  { key: "schedule", label: "Dienstplan", description: "Schichtplanung und Tauschbörse", icon: <CalendarDays strokeWidth={1.5} className="h-5 w-5" />, section: "admin" },
   { key: "time", label: "Zeiterfassung", description: "Arbeitszeiten erfassen und auswerten", icon: <Clock strokeWidth={1.5} className="h-5 w-5" />, section: "admin" },
   { key: "leave", label: "Urlaubsanträge", description: "Urlaubsanträge genehmigen und verwalten", icon: <Calendar strokeWidth={1.5} className="h-5 w-5" />, section: "admin" },
-  { key: "pulse", label: "Team-Puls", description: "Stimmung und Wohlbefinden im Team messen", icon: <HeartPulse strokeWidth={1.5} className="h-5 w-5" />, section: "admin" },
-  { key: "performance", label: "Performance", description: "Mitarbeiterbewertungen und Reviews", icon: <ClipboardList strokeWidth={1.5} className="h-5 w-5" />, section: "admin" },
-  { key: "kaizen", label: "Kaizen-Board", description: "Kontinuierliche Verbesserungsvorschläge", icon: <Lightbulb strokeWidth={1.5} className="h-5 w-5" />, section: "admin" },
   { key: "reports", label: "Reports", description: "Auswertungen und Exports", icon: <BarChart2 strokeWidth={1.5} className="h-5 w-5" />, section: "admin" },
   { key: "documents", label: "Dokumente", description: "Dateiverwaltung für das Unternehmen", icon: <FileText strokeWidth={1.5} className="h-5 w-5" />, section: "admin" },
-  { key: "locations", label: "Filialen", description: "Standorte und Filialen verwalten", icon: <MapPin strokeWidth={1.5} className="h-5 w-5" />, section: "admin" },
-  { key: "recruiting", label: "Recruiting", description: "Bewerbungen und Stellenausschreibungen verwalten", icon: <Briefcase strokeWidth={1.5} className="h-5 w-5" />, section: "admin" },
   // Employee
   { key: "time", label: "Zeiterfassung", description: "Eigene Arbeitszeiten eintragen", icon: <Clock strokeWidth={1.5} className="h-5 w-5" />, section: "employee" },
   { key: "leave", label: "Urlaub & Abwesenheit", description: "Urlaubsanträge stellen und einsehen", icon: <Calendar strokeWidth={1.5} className="h-5 w-5" />, section: "employee" },
-  { key: "calendar", label: "Teamkalender", description: "Abwesenheiten im Team im Überblick", icon: <Users strokeWidth={1.5} className="h-5 w-5" />, section: "employee" },
   { key: "documents", label: "Meine Dokumente", description: "Eigene Dokumente abrufen", icon: <FileText strokeWidth={1.5} className="h-5 w-5" />, section: "employee" },
   { key: "zeitkonto", label: "Zeitkonto", description: "Überstunden und Zeitguthaben einsehen", icon: <TrendingUp strokeWidth={1.5} className="h-5 w-5" />, section: "employee" },
-  { key: "wins", label: "Meine Wins", description: "Erfolge dokumentieren und teilen", icon: <Trophy strokeWidth={1.5} className="h-5 w-5" />, section: "employee" },
-  { key: "schedule", label: "Dienstplan", description: "Eigenen Dienstplan einsehen und tauschen", icon: <CalendarDays strokeWidth={1.5} className="h-5 w-5" />, section: "employee" },
-  { key: "checkin", label: "Check-in", description: "Tägliches Wohlbefinden erfassen", icon: <HeartPulse strokeWidth={1.5} className="h-5 w-5" />, section: "employee" },
-  { key: "okrs", label: "Meine OKRs", description: "Ziele und Key Results verfolgen", icon: <Target strokeWidth={1.5} className="h-5 w-5" />, section: "employee" },
-  { key: "kaizen", label: "Kaizen-Board", description: "Verbesserungsvorschläge einreichen", icon: <Lightbulb strokeWidth={1.5} className="h-5 w-5" />, section: "employee" },
-  { key: "review", label: "Performance Review", description: "Eigene Bewertungen einsehen", icon: <ClipboardList strokeWidth={1.5} className="h-5 w-5" />, section: "employee" },
-  { key: "culture", label: "Kultur & Werte", description: "Unternehmenswerte und Leitbild", icon: <Globe strokeWidth={1.5} className="h-5 w-5" />, section: "employee" },
 ];
 
 const ALL_KEYS = [...new Set(ALL_MODULES.map(m => m.key))];
@@ -99,6 +83,7 @@ export default function AdminSettingsPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Sync mit extern geladenen Company-Settings
     setEnabled(new Set(company?.settings?.enabledModules ?? ALL_KEYS));
   }, [company?.settings?.enabledModules]);
 

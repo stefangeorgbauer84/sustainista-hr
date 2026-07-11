@@ -67,6 +67,7 @@ export default function GuidedTour({ forceOpen, onClose }: GuidedTourProps) {
 
   useEffect(() => {
     if (forceOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Tour-Start abhängig von Prop/localStorage
       setStep(0);
       setVisible(true);
       return;

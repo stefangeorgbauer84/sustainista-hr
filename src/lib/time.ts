@@ -71,8 +71,7 @@ export async function getTimeRecordsForEmployee(
   year: number,
   month: number
 ): Promise<TimeRecord[]> {
-  const start = `${year}-${String(month).padStart(2, '0')}-01`
-  const end = `${year}-${String(month).padStart(2, '0')}-31`
+  const { start, end } = monthRange(year, month)
   const { data, error } = await supabase
     .from('time_records')
     .select('*')
@@ -80,9 +79,24 @@ export async function getTimeRecordsForEmployee(
     .gte('work_date', start)
     .lte('work_date', end)
     .order('work_date', { ascending: false })
-    .limit(100)
+    .limit(200)
   if (error) throw error
   return data ?? []
+}
+
+/** Erster/letzter Kalendertag des Monats als ISO-Strings — '-31' wäre für Feb/Apr/… ein ungültiges Datum. */
+export function monthRange(year: number, month: number): { start: string; end: string } {
+  const lastDay = new Date(year, month, 0).getDate()
+  const mm = String(month).padStart(2, '0')
+  return { start: `${year}-${mm}-01`, end: `${year}-${mm}-${String(lastDay).padStart(2, '0')}` }
+}
+
+/** Auswählbare Jahre für die Zeiterfassung: 2025 bis laufendes Jahr. */
+export function selectableYears(): number[] {
+  const current = new Date().getFullYear()
+  const years: number[] = []
+  for (let y = 2025; y <= current; y++) years.push(y)
+  return years
 }
 
 export function calcWorkedMinutes(record: TimeRecord): number {

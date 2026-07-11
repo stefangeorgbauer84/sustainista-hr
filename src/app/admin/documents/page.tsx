@@ -114,6 +114,7 @@ export default function AdminDocumentsPage() {
     setUploadingFor(empId);
     try {
       const ext = file.name.split(".").pop();
+      // eslint-disable-next-line react-hooks/purity -- Event-Handler, kein Render-Pfad
       const storagePath = `${empId}/${Date.now()}.${ext}`;
       const { error: uploadError } = await supabase.storage.from("documents").upload(storagePath, file);
       if (uploadError) throw uploadError;

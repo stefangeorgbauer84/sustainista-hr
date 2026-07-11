@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getRunningEntry, getTimeRecordsForEmployee,
-  startTimer, stopTimer, calcWorkedMinutes, formatDuration,
+  startTimer, stopTimer, calcWorkedMinutes, formatDuration, selectableYears,
 } from "@/lib/time";
 import { supabase } from "@/lib/supabase";
 import type { TimeRecord } from "@/types";
@@ -35,7 +35,7 @@ export default function TimePage() {
   const qc = useQueryClient();
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year] = useState(now.getFullYear());
+  const [year, setYear] = useState(now.getFullYear());
   const [showManual, setShowManual] = useState(false);
   const [, setTick] = useState(0);
 
@@ -307,16 +307,25 @@ export default function TimePage() {
             <Clock className="h-4 w-4 text-gray-400" strokeWidth={1.5} />
             <h2 className="text-sm font-medium text-gray-900">{MONTHS[month - 1]} {year}</h2>
           </div>
-          <div className="flex gap-1">
-            {MONTHS.map((m, i) => (
-              <button
-                key={i}
-                onClick={() => setMonth(i + 1)}
-                className={`rounded px-2 py-1 text-xs transition ${i + 1 === month ? "bg-[#4F772D] text-white" : "text-gray-500 hover:bg-gray-100"}`}
-              >
-                {m}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <select
+              value={year}
+              onChange={e => setYear(Number(e.target.value))}
+              className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-600 focus:border-[#4F772D] focus:outline-none"
+            >
+              {selectableYears().map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <div className="flex gap-1">
+              {MONTHS.map((m, i) => (
+                <button
+                  key={i}
+                  onClick={() => setMonth(i + 1)}
+                  className={`rounded px-2 py-1 text-xs transition ${i + 1 === month ? "bg-[#4F772D] text-white" : "text-gray-500 hover:bg-gray-100"}`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

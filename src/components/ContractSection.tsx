@@ -185,6 +185,7 @@ export function ContractSection({ employeeId, employeeName, companyId }: Props) 
           jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           pagebreak: { mode: ["avoid-all", "css"] } as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- html2pdf.js hat keine vollständigen Typen
         } as any)
         .from(wrapper)
         .save();
