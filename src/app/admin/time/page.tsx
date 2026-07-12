@@ -325,6 +325,11 @@ export default function AdminTimePage() {
                         </span>
                       )}
                     </p>
+                    {entry.notes && (
+                      <p className="mt-0.5 max-w-xl truncate text-xs italic text-gray-400" title={entry.notes}>
+                        {entry.notes}
+                      </p>
+                    )}
                     {isOver10h && (
                       <p className="text-[10px] text-red-500 flex items-center gap-1 mt-0.5">
                         <AlertTriangle className="h-3 w-3" strokeWidth={1.5} />

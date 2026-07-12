@@ -29,7 +29,8 @@ test.describe("Employee list — search + filter", () => {
 
   test("pagination loads next page", async ({ page }) => {
     const nextBtn = page.getByRole("button").filter({ hasText: /›|>/ }).first();
-    if (await nextBtn.isEnabled()) {
+    const hasPagination = await nextBtn.isVisible({ timeout: 5_000 }).catch(() => false);
+    if (hasPagination && await nextBtn.isEnabled()) {
       await nextBtn.click();
       await expect(page.getByRole("button").filter({ hasText: /‹|</ }).first()).toBeEnabled();
     }

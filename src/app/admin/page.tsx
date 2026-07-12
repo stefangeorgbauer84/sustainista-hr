@@ -49,7 +49,7 @@ export default function AdminPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("employees").select("*").eq("is_active", true)
-        .not("employee_number", "in", '("EMP001","EMP002")').limit(500);
+        .or("employee_number.is.null,employee_number.not.in.(EMP001,EMP002)").limit(500);
       if (error) throw error;
       return data as unknown as Employee[];
     },

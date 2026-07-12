@@ -11,10 +11,13 @@ test.describe("HR Dashboard — KPIs", () => {
   });
 
   test("Aktive Mitarbeiter KPI card visible with positive count", async ({ page }) => {
-    const card = page.getByText("Aktive Mitarbeiter").locator("..");
-    await expect(card).toBeVisible();
-    const text = await card.textContent() ?? "";
-    expect(parseInt(text.replace(/\D/g, ""))).toBeGreaterThan(0);
+    await expect(page.getByText("Aktive Mitarbeiter", { exact: true })).toBeVisible();
+    await expect
+      .poll(async () => {
+        const text = await page.locator("main").innerText();
+        return Number((text.match(/Aktive Mitarbeiter\s*\n\s*(\d+)/) ?? [])[1] ?? NaN);
+      }, { timeout: 15_000 })
+      .toBeGreaterThan(0);
   });
 
   test("In Karenz KPI links to /admin/employees/status", async ({ page }) => {
