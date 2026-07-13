@@ -19,6 +19,10 @@ async function getMyEmployeeId(): Promise<string> {
   return employee_id
 }
 
+function localDateString(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 export async function startTimer(note?: string): Promise<TimeRecord> {
   const { employee_id, company_id } = await getMyProfile()
   const now = new Date()
@@ -27,7 +31,7 @@ export async function startTimer(note?: string): Promise<TimeRecord> {
     .insert({
       employee_id,
       company_id,
-      work_date: now.toISOString().split('T')[0],
+      work_date: localDateString(now),
       start_time: now.toTimeString().slice(0, 5),
       break_minutes: 0,
       status: 'draft',
@@ -53,7 +57,7 @@ export async function stopTimer(recordId: string): Promise<TimeRecord> {
 
 export async function getRunningEntry(): Promise<TimeRecord | null> {
   const employeeId = await getMyEmployeeId()
-  const today = new Date().toISOString().split('T')[0]
+  const today = localDateString(new Date())
   const { data } = await supabase
     .from('time_records')
     .select('*')
